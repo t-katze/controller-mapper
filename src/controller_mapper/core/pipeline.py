@@ -88,10 +88,14 @@ class RuleProcessor:
         raw_state: InputState,
         output: OutputState,
         now: float,
+        device_aliases: dict[str, str] | None = None,
     ) -> None:
         """ルールを適用してOutputStateを更新する."""
         r = self.rule
-        device_state = raw_state.devices.get(r.input.device)
+        input_device = r.input.device
+        if device_aliases is not None:
+            input_device = device_aliases.get(input_device, input_device)
+        device_state = raw_state.devices.get(input_device)
         if device_state is None:
             return
 
@@ -148,17 +152,28 @@ class Pipeline:
     def __init__(self, profile: ProfileConfig | None = None) -> None:
         self._rules: list[RuleProcessor] = []
         self._mode_manager: ModeManager | None = None
+        self._device_aliases: dict[str, str] = {}
         if profile is not None:
             self.load_profile(profile)
 
-    def load_profile(self, profile: ProfileConfig) -> None:
+    def load_profile(
+        self,
+        profile: ProfileConfig,
+        device_aliases: dict[str, str] | None = None,
+    ) -> None:
         """プロファイルを読み込んでルールを再構築する."""
         self._rules = [RuleProcessor(rule) for rule in profile.rules]
         self._mode_manager = ModeManager(
             definitions=profile.modes.definitions,
             default=profile.modes.default,
         )
+        self.set_device_aliases(device_aliases or {})
         logger.info("パイプライン: %d ルールを読み込みました", len(self._rules))
+
+    def set_device_aliases(self, device_aliases: dict[str, str]) -> None:
+        self._device_aliases = dict(device_aliases)
+        if self._device_aliases:
+            logger.info("デバイス別名を設定: %s", self._device_aliases)
 
     @property
     def mode_manager(self) -> ModeManager | None:
@@ -176,7 +191,7 @@ class Pipeline:
             if self._mode_manager and not self._mode_manager.matches(rp.rule.mode):
                 continue
             try:
-                rp.process(raw, output, now)
+                rp.process(raw, output, now, self._device_aliases)
             except Exception as e:
                 logger.error("ルール '%s' 処理エラー: %s", rp.rule.name, e)
 

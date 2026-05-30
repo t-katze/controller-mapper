@@ -35,11 +35,13 @@ from controller_mapper.core.errors import (
     OutputBackendError,
     ProfileLoadError,
 )
+from controller_mapper.core.device_matching import resolve_device_aliases
 from controller_mapper.core.pipeline import Pipeline
 from controller_mapper.core.scheduler import Scheduler
 from controller_mapper.core.state import DeviceInfo, FilteredState, InputState, OutputState
 from controller_mapper.input_backends.pygame_backend import PygameBackend
 from controller_mapper.output_backends.null_backend import NullBackend
+from controller_mapper.output_backends.vjoy_backend import VJoyBackend
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +132,7 @@ class DashboardPanel(QWidget):
         # フッター
         footer = QLabel(
             "⚠ vJoy出力にはWindows + vJoyドライバが必要です。\n"
-            "現在は Null バックエンド (テスト用) で動作しています。"
+            "出力バックエンドは読み込んだプロファイルの output 設定に従います。"
         )
         footer.setStyleSheet("color: #78716c; font-size: 11px;")
         footer.setWordWrap(True)
@@ -151,6 +153,9 @@ class DashboardPanel(QWidget):
 
     def set_profile_info(self, text: str) -> None:
         self._profile_label.setText(f"プロファイル: {text}")
+
+    def set_output_info(self, text: str) -> None:
+        self._output_label.setText(f"出力: {text}")
 
 
 class MainWindow(QMainWindow):
@@ -266,11 +271,66 @@ class MainWindow(QMainWindow):
 
         try:
             self._output_backend.initialize()
-            self._status_backend.setText(
-                f"出力: {self._output_backend.backend_name}"
-            )
+            self._update_output_status()
         except OutputBackendError as e:
             logger.error("出力バックエンド初期化失敗: %s", e)
+
+    def _output_status_text(self) -> str:
+        backend_name = self._output_backend.backend_name
+        if backend_name == "null":
+            return "Null (テストモード)"
+        if backend_name == "vjoy":
+            device_id = getattr(self._output_backend, "device_id", "?")
+            connected = getattr(self._output_backend, "is_connected", False)
+            state = "接続済み" if connected else "未接続"
+            return f"vJoy Device {device_id} ({state})"
+        return backend_name
+
+    def _update_output_status(self) -> None:
+        text = self._output_status_text()
+        self._dashboard.set_output_info(text)
+        self._status_backend.setText(f"出力: {text}")
+
+    def _set_output_backend(self, backend) -> None:
+        try:
+            self._output_backend.shutdown()
+        except Exception:
+            logger.debug("既存出力バックエンドの終了で例外", exc_info=True)
+
+        self._output_backend = backend
+        self._output_backend.initialize()
+        self._update_output_status()
+
+    def _configure_output_backend_from_profile(self) -> bool:
+        if self._profile is None:
+            self._set_output_backend(NullBackend())
+            return True
+
+        output_type = self._profile.output.type.lower()
+        device_id = self._profile.output.device_id
+
+        try:
+            if output_type == "vjoy":
+                self._set_output_backend(VJoyBackend(device_id=device_id))
+            elif output_type == "null":
+                self._set_output_backend(NullBackend())
+            else:
+                raise OutputBackendError(f"未対応の出力バックエンドです: {output_type}")
+            logger.info("出力バックエンド設定完了: %s", self._output_status_text())
+            return True
+        except OutputBackendError as e:
+            logger.error("出力バックエンド設定失敗: %s", e, exc_info=True)
+            try:
+                self._set_output_backend(NullBackend())
+            except OutputBackendError:
+                logger.error("NullBackendへのフォールバックに失敗", exc_info=True)
+            QMessageBox.warning(
+                self,
+                "出力バックエンド接続失敗",
+                f"{output_type} 出力を初期化できませんでした:\n{e}\n\n"
+                "NullBackend (テストモード) にフォールバックします。",
+            )
+            return False
 
     def _refresh_device_views(self, status_prefix: str | None = None) -> list[DeviceInfo]:
         """最新のデバイス一覧を、デバイス依存タブへ反映する."""
@@ -317,6 +377,8 @@ class MainWindow(QMainWindow):
             if isinstance(self._input_backend, PygameBackend):
                 self._input_backend.rescan()
             devices = self._refresh_device_views("再スキャン完了")
+            if self._profile is not None:
+                self._pipeline.set_device_aliases(self._resolve_profile_device_aliases())
             logger.info("再スキャン結果を各タブへ反映: %d デバイス", len(devices))
         except Exception as e:
             logger.error("再スキャンエラー: %s", e, exc_info=True)
@@ -327,6 +389,12 @@ class MainWindow(QMainWindow):
         if was_running:
             self._start_pipeline(f"再スキャン完了 ({len(devices)} デバイス) / 動作再開")
 
+    def _resolve_profile_device_aliases(self) -> dict[str, str]:
+        """プロファイル内の論理デバイス名をpygameの実デバイスIDへ対応付ける."""
+        if self._profile is None:
+            return {}
+        return resolve_device_aliases(self._profile, self._input_backend.get_devices())
+
     def _on_load_profile(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -336,10 +404,18 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
+        was_running = self._scheduler.is_running
+        if was_running:
+            self._scheduler.stop()
+            self._dashboard.set_running(False)
         try:
             self._profile = load_profile(path)
-            self._pipeline.load_profile(self._profile)
+            self._pipeline.load_profile(
+                self._profile,
+                device_aliases=self._resolve_profile_device_aliases(),
+            )
             self._mapping_editor.load_profile(self._profile)
+            self._configure_output_backend_from_profile()
             self._dashboard.set_profile_info(
                 f"{self._profile.name} ({len(self._profile.rules)} ルール)"
             )
@@ -348,6 +424,10 @@ class MainWindow(QMainWindow):
         except (ProfileLoadError, Exception) as e:
             logger.error("プロファイル読み込みエラー: %s", e)
             QMessageBox.critical(self, "エラー", f"プロファイル読み込みに失敗しました:\n{e}")
+            return
+
+        if was_running:
+            self._start_pipeline("プロファイル読み込み完了 / 動作再開")
 
     def _on_start(self) -> None:
         if self._scheduler.is_running:

@@ -18,6 +18,7 @@ class PygameBackend(InputBackend):
 
     def __init__(self) -> None:
         self._joysticks: dict[int, object] = {}
+        self._ignored_count = 0
         self._initialized = False
 
     @property
@@ -42,12 +43,27 @@ class PygameBackend(InputBackend):
 
     def _scan_joysticks(self) -> None:
         self._joysticks.clear()
+        self._ignored_count = 0
         count = self._pygame.joystick.get_count()
         for i in range(count):
             joy = self._pygame.joystick.Joystick(i)
             joy.init()
+            name = joy.get_name()
+            if self._is_ignored_input_device(name):
+                self._ignored_count += 1
+                try:
+                    joy.quit()
+                except Exception:
+                    pass
+                logger.info("  [%d] %s (入力から除外)", i, name)
+                continue
             self._joysticks[i] = joy
-            logger.info("  [%d] %s", i, joy.get_name())
+            logger.info("  [%d] %s", i, name)
+        logger.info(
+            "入力対象デバイス: %d 台 (除外: %d 台)",
+            len(self._joysticks),
+            self._ignored_count,
+        )
 
     def shutdown(self) -> None:
         if self._initialized:
@@ -103,6 +119,10 @@ class PygameBackend(InputBackend):
                 state.hats[h] = tuple(joy.get_hat(h))  # type: ignore[assignment]
             result[dev_id] = state
         return result
+
+    @staticmethod
+    def _is_ignored_input_device(name: str) -> bool:
+        return "vjoy" in name.lower()
 
     @staticmethod
     def _device_id(index: int) -> str:

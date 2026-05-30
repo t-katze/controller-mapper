@@ -158,4 +158,4 @@ rules:
       pressed_value: 1.0
     output:
       type: axis
-      name: rz
+      name: slider1
