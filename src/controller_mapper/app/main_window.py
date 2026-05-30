@@ -1,0 +1,339 @@
+"""メインウィンドウ.
+
+設計書 §7.1 画面構成, §7.2 主要タブ に対応.
+"""
+from __future__ import annotations
+
+import logging
+import queue
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QStatusBar,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from controller_mapper.app.calibration_panel import CalibrationPanel
+from controller_mapper.app.device_panel import DevicePanel
+from controller_mapper.app.log_panel import LogPanel
+from controller_mapper.app.mapping_editor import MappingEditor
+from controller_mapper.app.monitor_panel import MonitorPanel
+from controller_mapper.config.loader import load_profile
+from controller_mapper.core.errors import (
+    InputBackendError,
+    OutputBackendError,
+    ProfileLoadError,
+)
+from controller_mapper.core.pipeline import Pipeline
+from controller_mapper.core.scheduler import Scheduler
+from controller_mapper.core.state import FilteredState, InputState, OutputState
+from controller_mapper.input_backends.pygame_backend import PygameBackend
+from controller_mapper.output_backends.null_backend import NullBackend
+
+logger = logging.getLogger(__name__)
+
+
+class DashboardPanel(QWidget):
+    """ダッシュボードタブ."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+
+        # タイトル
+        title = QLabel("🕹 Controller Mapper")
+        title.setStyleSheet(
+            "font-size: 28px; font-weight: bold;"
+            " color: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            "   stop:0 #a78bfa, stop:1 #38bdf8);"
+        )
+        layout.addWidget(title, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        subtitle = QLabel("フライトスティック入力補正・変換アプリ")
+        subtitle.setStyleSheet("color: #64748b; font-size: 13px;")
+        layout.addWidget(subtitle, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        layout.addSpacing(20)
+
+        # 状態カード
+        self._card = QWidget()
+        self._card.setStyleSheet(
+            "QWidget { background: #0f172a; border-radius: 12px; border: 1px solid #1e293b; }"
+        )
+        card_layout = QVBoxLayout(self._card)
+        card_layout.setContentsMargins(20, 16, 20, 16)
+        card_layout.setSpacing(10)
+
+        self._status_label = QLabel("● 停止中")
+        self._status_label.setStyleSheet("color: #ef4444; font-size: 16px; font-weight: bold;")
+        card_layout.addWidget(self._status_label)
+
+        self._device_label = QLabel("デバイス: 未検出")
+        self._device_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        card_layout.addWidget(self._device_label)
+
+        self._profile_label = QLabel("プロファイル: なし")
+        self._profile_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        card_layout.addWidget(self._profile_label)
+
+        self._output_label = QLabel("出力: Null (テストモード)")
+        self._output_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        card_layout.addWidget(self._output_label)
+
+        layout.addWidget(self._card)
+
+        # ボタン行
+        btn_row = QHBoxLayout()
+        self.btn_load_profile = QPushButton("📂 プロファイル読み込み")
+        self.btn_load_profile.setStyleSheet(
+            "QPushButton { background: #1e40af; color: white; border-radius: 8px;"
+            " padding: 10px 24px; font-size: 13px; }"
+            "QPushButton:hover { background: #2563eb; }"
+        )
+        btn_row.addWidget(self.btn_load_profile)
+
+        self.btn_start = QPushButton("▶ 開始")
+        self.btn_start.setStyleSheet(
+            "QPushButton { background: #065f46; color: white; border-radius: 8px;"
+            " padding: 10px 24px; font-size: 13px; }"
+            "QPushButton:hover { background: #047857; }"
+            "QPushButton:disabled { background: #374151; color: #6b7280; }"
+        )
+        btn_row.addWidget(self.btn_start)
+
+        self.btn_stop = QPushButton("■ 停止")
+        self.btn_stop.setStyleSheet(
+            "QPushButton { background: #7f1d1d; color: white; border-radius: 8px;"
+            " padding: 10px 24px; font-size: 13px; }"
+            "QPushButton:hover { background: #991b1b; }"
+            "QPushButton:disabled { background: #374151; color: #6b7280; }"
+        )
+        self.btn_stop.setEnabled(False)
+        btn_row.addWidget(self.btn_stop)
+        layout.addLayout(btn_row)
+
+        layout.addStretch()
+
+        # フッター
+        footer = QLabel(
+            "⚠ vJoy出力にはWindows + vJoyドライバが必要です。\n"
+            "現在は Null バックエンド (テスト用) で動作しています。"
+        )
+        footer.setStyleSheet("color: #78716c; font-size: 11px;")
+        footer.setWordWrap(True)
+        layout.addWidget(footer)
+
+    def set_running(self, running: bool) -> None:
+        if running:
+            self._status_label.setText("● 動作中")
+            self._status_label.setStyleSheet("color: #10b981; font-size: 16px; font-weight: bold;")
+        else:
+            self._status_label.setText("● 停止中")
+            self._status_label.setStyleSheet("color: #ef4444; font-size: 16px; font-weight: bold;")
+        self.btn_start.setEnabled(not running)
+        self.btn_stop.setEnabled(running)
+
+    def set_device_info(self, text: str) -> None:
+        self._device_label.setText(f"デバイス: {text}")
+
+    def set_profile_info(self, text: str) -> None:
+        self._profile_label.setText(f"プロファイル: {text}")
+
+
+class MainWindow(QMainWindow):
+    """アプリのメインウィンドウ."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle("Controller Mapper")
+        self.resize(1200, 800)
+
+        # バックエンド
+        self._input_backend = PygameBackend()
+        self._output_backend = NullBackend()
+        self._pipeline = Pipeline()
+        self._scheduler = Scheduler()
+        self._profile = None
+
+        self._setup_style()
+        self._setup_ui()
+        self._initialize_backends()
+
+        # GUI更新タイマー (30 Hz)
+        self._gui_timer = QTimer(self)
+        self._gui_timer.setInterval(33)
+        self._gui_timer.timeout.connect(self._update_gui)
+        self._gui_timer.start()
+
+    def _setup_style(self) -> None:
+        app = QApplication.instance()
+        if app is None:
+            return
+        app.setStyle("Fusion")
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor("#0f172a"))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor("#e0e0e0"))
+        palette.setColor(QPalette.ColorRole.Base, QColor("#1e293b"))
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor("#0f172a"))
+        palette.setColor(QPalette.ColorRole.Text, QColor("#e0e0e0"))
+        palette.setColor(QPalette.ColorRole.Button, QColor("#1e293b"))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor("#e0e0e0"))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor("#4c1d95"))
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+        app.setPalette(palette)
+
+        font = QFont("Segoe UI", 10)
+        app.setFont(font)
+
+    def _setup_ui(self) -> None:
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # タブウィジェット
+        self._tabs = QTabWidget()
+        self._tabs.setStyleSheet(
+            "QTabWidget::pane { border: 1px solid #1e293b; background: #0f172a; }"
+            "QTabBar::tab { background: #1e293b; color: #94a3b8; padding: 8px 16px;"
+            "  border-top-left-radius: 4px; border-top-right-radius: 4px; margin-right: 2px; }"
+            "QTabBar::tab:selected { background: #0f172a; color: #a78bfa; font-weight: bold; }"
+            "QTabBar::tab:hover { background: #263548; color: #e0e0e0; }"
+        )
+
+        # Dashboard
+        self._dashboard = DashboardPanel()
+        self._dashboard.btn_load_profile.clicked.connect(self._on_load_profile)
+        self._dashboard.btn_start.clicked.connect(self._on_start)
+        self._dashboard.btn_stop.clicked.connect(self._on_stop)
+        self._tabs.addTab(self._dashboard, "🏠 Dashboard")
+
+        # Devices
+        self._device_panel = DevicePanel()
+        self._tabs.addTab(self._device_panel, "🎮 Devices")
+
+        # Monitor
+        self._monitor_panel = MonitorPanel()
+        self._tabs.addTab(self._monitor_panel, "📊 Monitor")
+
+        # Calibration
+        self._calib_panel = CalibrationPanel()
+        self._tabs.addTab(self._calib_panel, "🎯 Calibration")
+
+        # Mapping
+        self._mapping_editor = MappingEditor()
+        self._tabs.addTab(self._mapping_editor, "🗺 Mapping")
+
+        # Logs
+        self._log_panel = LogPanel()
+        self._tabs.addTab(self._log_panel, "📋 Logs")
+
+        main_layout.addWidget(self._tabs)
+
+        # ステータスバー
+        self._statusbar = self.statusBar()
+        self._statusbar.setStyleSheet(
+            "QStatusBar { background: #0f172a; color: #64748b; font-size: 11px; }"
+        )
+        self._status_main = QLabel("準備完了")
+        self._statusbar.addWidget(self._status_main)
+        self._status_backend = QLabel("")
+        self._statusbar.addPermanentWidget(self._status_backend)
+
+    def _initialize_backends(self) -> None:
+        try:
+            self._input_backend.initialize()
+            devices = self._input_backend.get_devices()
+            self._device_panel.set_backend(self._input_backend)
+            self._monitor_panel.setup_devices(devices)
+            device_text = f"{len(devices)} 台"
+            self._dashboard.set_device_info(device_text)
+            self._status_main.setText(f"入力バックエンド初期化完了 ({len(devices)} デバイス)")
+            logger.info("入力バックエンド初期化完了: %d デバイス", len(devices))
+        except InputBackendError as e:
+            logger.error("入力バックエンド初期化失敗: %s", e)
+            self._status_main.setText(f"エラー: {e}")
+
+        try:
+            self._output_backend.initialize()
+            self._status_backend.setText(
+                f"出力: {self._output_backend.backend_name}"
+            )
+        except OutputBackendError as e:
+            logger.error("出力バックエンド初期化失敗: %s", e)
+
+    def _on_load_profile(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "プロファイルを開く",
+            str(Path.cwd()),
+            "YAML Files (*.yaml *.yml);;All Files (*)",
+        )
+        if not path:
+            return
+        try:
+            self._profile = load_profile(path)
+            self._pipeline.load_profile(self._profile)
+            self._mapping_editor.load_profile(self._profile)
+            self._dashboard.set_profile_info(
+                f"{self._profile.name} ({len(self._profile.rules)} ルール)"
+            )
+            self._status_main.setText(f"プロファイル読み込み完了: {self._profile.name}")
+            logger.info("プロファイル読み込み: %s", path)
+        except (ProfileLoadError, Exception) as e:
+            logger.error("プロファイル読み込みエラー: %s", e)
+            QMessageBox.critical(self, "エラー", f"プロファイル読み込みに失敗しました:\n{e}")
+
+    def _on_start(self) -> None:
+        if self._scheduler.is_running:
+            return
+        hz = self._profile.global_.update_rate_hz if self._profile else 250
+        self._scheduler.start(
+            input_backend=self._input_backend,
+            output_backend=self._output_backend,
+            pipeline=self._pipeline,
+            update_hz=hz,
+        )
+        self._dashboard.set_running(True)
+        self._status_main.setText("動作中...")
+        logger.info("変換パイプライン開始 (%.0f Hz)", hz)
+
+    def _on_stop(self) -> None:
+        self._scheduler.stop()
+        self._dashboard.set_running(False)
+        self._status_main.setText("停止しました")
+        logger.info("変換パイプライン停止")
+
+    def _update_gui(self) -> None:
+        """QTimer で 30 Hz に呼ばれる GUI更新."""
+        q = self._scheduler.state_queue
+        raw = filtered = output = None
+        try:
+            while True:
+                raw, filtered, output = q.get_nowait()
+        except queue.Empty:
+            pass
+
+        if raw is not None and filtered is not None and output is not None:
+            self._monitor_panel.update_state(raw, filtered, output)
+
+    def closeEvent(self, event) -> None:
+        self._gui_timer.stop()
+        self._scheduler.stop()
+        self._input_backend.shutdown()
+        self._output_backend.shutdown()
+        logger.info("アプリ終了")
+        event.accept()

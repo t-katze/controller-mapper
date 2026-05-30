@@ -1,0 +1,64 @@
+profile:
+  name: MSFS_General
+  version: 1
+
+devices:
+  joystick:
+    match:
+      name_contains: ""
+      role: stick
+
+output:
+  type: vjoy
+  device_id: 1
+
+global:
+  update_rate_hz: 250
+  gui_rate_hz: 30
+
+modes:
+  default: default
+  definitions:
+    - default
+
+rules:
+  - name: roll
+    mode: "*"
+    input:
+      device: joystick
+      type: axis
+      index: 0
+    filters:
+      deadzone: 0.05
+      curve: 1.2
+      invert: false
+    output:
+      type: axis
+      name: x
+
+  - name: pitch
+    mode: "*"
+    input:
+      device: joystick
+      type: axis
+      index: 1
+    filters:
+      deadzone: 0.05
+      curve: 1.2
+      invert: true
+    output:
+      type: axis
+      name: y
+
+  - name: throttle
+    mode: "*"
+    input:
+      device: joystick
+      type: axis
+      index: 2
+    filters:
+      deadzone: 0.02
+      smoothing: 0.1
+    output:
+      type: axis
+      name: z

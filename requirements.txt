@@ -1,0 +1,4 @@
+PySide6>=6.6.0
+pygame>=2.5.0
+PyYAML>=6.0.1
+# pyvjoy>=1.0.1  # Windows only: uncomment when using vJoy output
