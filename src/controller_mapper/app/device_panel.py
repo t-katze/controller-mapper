@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 class DevicePanel(QWidget):
     """接続デバイス一覧パネル."""
+
+    rescan_requested: Signal = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -73,13 +75,15 @@ class DevicePanel(QWidget):
 
     def set_backend(self, backend: InputBackend) -> None:
         self._backend = backend
-        self.refresh()
 
-    def refresh(self) -> None:
-        if self._backend is None:
-            return
-        devices = self._backend.get_devices()
+    def refresh(self, devices: list[DeviceInfo] | None = None) -> list[DeviceInfo]:
+        if devices is None:
+            if self._backend is None:
+                devices = []
+            else:
+                devices = self._backend.get_devices()
         self._update_table(devices)
+        return devices
 
     def _update_table(self, devices: list[DeviceInfo]) -> None:
         self._table.setRowCount(len(devices))
@@ -94,8 +98,4 @@ class DevicePanel(QWidget):
         logger.info("デバイス一覧を更新: %d 台", len(devices))
 
     def _on_rescan(self) -> None:
-        if self._backend is not None:
-            from controller_mapper.input_backends.pygame_backend import PygameBackend
-            if isinstance(self._backend, PygameBackend):
-                self._backend.rescan()
-            self.refresh()
+        self.rescan_requested.emit()

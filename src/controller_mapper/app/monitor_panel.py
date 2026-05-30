@@ -234,6 +234,7 @@ class MonitorPanel(QWidget):
             )
             self._content_layout.addWidget(w)
             self._device_widgets[dev.device_id] = w
+        self._output_axes_label.setText("(ルールなし / 停止中)")
 
     def update_state(
         self,

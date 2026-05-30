@@ -13,6 +13,10 @@
 - Windows 11（vJoy出力を使う場合） または Linux / macOS（モニタのみ）
 - vJoyドライバ（仮想コントローラ出力を使う場合）
 
+補足: Python 3.14 では通常の `pygame` に対応wheelがないため、
+このプロジェクトでは互換パッケージの `pygame-ce` を使用します。
+コード上の `import pygame` はそのまま動作します。
+
 ## インストール
 
 ```bash

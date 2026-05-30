@@ -37,7 +37,7 @@ from controller_mapper.core.errors import (
 )
 from controller_mapper.core.pipeline import Pipeline
 from controller_mapper.core.scheduler import Scheduler
-from controller_mapper.core.state import FilteredState, InputState, OutputState
+from controller_mapper.core.state import DeviceInfo, FilteredState, InputState, OutputState
 from controller_mapper.input_backends.pygame_backend import PygameBackend
 from controller_mapper.output_backends.null_backend import NullBackend
 
@@ -223,6 +223,7 @@ class MainWindow(QMainWindow):
 
         # Devices
         self._device_panel = DevicePanel()
+        self._device_panel.rescan_requested.connect(self._on_rescan_devices)
         self._tabs.addTab(self._device_panel, "🎮 Devices")
 
         # Monitor
@@ -256,12 +257,8 @@ class MainWindow(QMainWindow):
     def _initialize_backends(self) -> None:
         try:
             self._input_backend.initialize()
-            devices = self._input_backend.get_devices()
             self._device_panel.set_backend(self._input_backend)
-            self._monitor_panel.setup_devices(devices)
-            device_text = f"{len(devices)} 台"
-            self._dashboard.set_device_info(device_text)
-            self._status_main.setText(f"入力バックエンド初期化完了 ({len(devices)} デバイス)")
+            devices = self._refresh_device_views("入力バックエンド初期化完了")
             logger.info("入力バックエンド初期化完了: %d デバイス", len(devices))
         except InputBackendError as e:
             logger.error("入力バックエンド初期化失敗: %s", e)
@@ -274,6 +271,61 @@ class MainWindow(QMainWindow):
             )
         except OutputBackendError as e:
             logger.error("出力バックエンド初期化失敗: %s", e)
+
+    def _refresh_device_views(self, status_prefix: str | None = None) -> list[DeviceInfo]:
+        """最新のデバイス一覧を、デバイス依存タブへ反映する."""
+        devices = self._input_backend.get_devices()
+        self._clear_state_queue()
+        self._device_panel.refresh(devices)
+        self._monitor_panel.setup_devices(devices)
+
+        max_axes = max((dev.num_axes for dev in devices), default=0)
+        self._calib_panel.setup_axes(max_axes)
+
+        self._dashboard.set_device_info(f"{len(devices)} 台")
+        if status_prefix is not None:
+            self._status_main.setText(f"{status_prefix} ({len(devices)} デバイス)")
+        return devices
+
+    def _clear_state_queue(self) -> None:
+        q = self._scheduler.state_queue
+        try:
+            while True:
+                q.get_nowait()
+        except queue.Empty:
+            pass
+
+    def _start_pipeline(self, status_text: str = "動作中...") -> None:
+        hz = self._profile.global_.update_rate_hz if self._profile else 250
+        self._scheduler.start(
+            input_backend=self._input_backend,
+            output_backend=self._output_backend,
+            pipeline=self._pipeline,
+            update_hz=hz,
+        )
+        self._dashboard.set_running(True)
+        self._status_main.setText(status_text)
+        logger.info("変換パイプライン開始 (%.0f Hz)", hz)
+
+    def _on_rescan_devices(self) -> None:
+        was_running = self._scheduler.is_running
+        if was_running:
+            self._scheduler.stop()
+            self._dashboard.set_running(False)
+
+        try:
+            if isinstance(self._input_backend, PygameBackend):
+                self._input_backend.rescan()
+            devices = self._refresh_device_views("再スキャン完了")
+            logger.info("再スキャン結果を各タブへ反映: %d デバイス", len(devices))
+        except Exception as e:
+            logger.error("再スキャンエラー: %s", e, exc_info=True)
+            self._status_main.setText(f"再スキャン失敗: {e}")
+            QMessageBox.critical(self, "エラー", f"再スキャンに失敗しました:\n{e}")
+            return
+
+        if was_running:
+            self._start_pipeline(f"再スキャン完了 ({len(devices)} デバイス) / 動作再開")
 
     def _on_load_profile(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -300,16 +352,7 @@ class MainWindow(QMainWindow):
     def _on_start(self) -> None:
         if self._scheduler.is_running:
             return
-        hz = self._profile.global_.update_rate_hz if self._profile else 250
-        self._scheduler.start(
-            input_backend=self._input_backend,
-            output_backend=self._output_backend,
-            pipeline=self._pipeline,
-            update_hz=hz,
-        )
-        self._dashboard.set_running(True)
-        self._status_main.setText("動作中...")
-        logger.info("変換パイプライン開始 (%.0f Hz)", hz)
+        self._start_pipeline()
 
     def _on_stop(self) -> None:
         self._scheduler.stop()

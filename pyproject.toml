@@ -5,7 +5,7 @@ description = "Flight stick input correction and virtual controller output app"
 requires-python = ">=3.11"
 dependencies = [
     "PySide6>=6.6.0",
-    "pygame>=2.5.0",
+    "pygame-ce>=2.5.7",
     "PyYAML>=6.0.1",
 ]
 
@@ -21,4 +21,4 @@ pythonpath = ["src"]
 
 [build-system]
 requires = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
