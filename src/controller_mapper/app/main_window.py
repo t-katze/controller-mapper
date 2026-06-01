@@ -12,9 +12,11 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -31,6 +33,12 @@ from controller_mapper.app.mapping_editor import MappingEditor
 from controller_mapper.app.modes_panel import ModesPanel
 from controller_mapper.app.monitor_panel import MonitorPanel
 from controller_mapper.app.output_panel import OutputPanel
+from controller_mapper.config.app_settings import (
+    AppSettings,
+    load_settings,
+    save_settings,
+    settings_file_path,
+)
 from controller_mapper.config.loader import load_profile
 from controller_mapper.core.errors import (
     InputBackendError,
@@ -133,6 +141,87 @@ class DashboardPanel(QWidget):
         btn_row.addWidget(self.btn_stop)
         layout.addLayout(btn_row)
 
+        # ─── 起動設定カード ───
+        settings_card = QWidget()
+        settings_card.setStyleSheet(
+            "QWidget { background: #0f172a; border-radius: 12px; border: 1px solid #1e293b; }"
+        )
+        sc_layout = QVBoxLayout(settings_card)
+        sc_layout.setContentsMargins(20, 16, 20, 16)
+        sc_layout.setSpacing(8)
+
+        sc_title = QLabel("⚙ 起動設定")
+        sc_title.setStyleSheet("color: #fbbf24; font-size: 14px; font-weight: bold;")
+        sc_layout.addWidget(sc_title)
+
+        # デフォルトプロファイル行
+        dp_row = QHBoxLayout()
+        dp_label = QLabel("デフォルトプロファイル:")
+        dp_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        dp_row.addWidget(dp_label)
+
+        self._default_profile_edit = QLineEdit()
+        self._default_profile_edit.setPlaceholderText("(なし — 手動で読み込み)")
+        self._default_profile_edit.setStyleSheet(
+            "QLineEdit { background: #1e293b; color: #e0e0e0;"
+            " border: 1px solid #475569; border-radius: 4px; padding: 4px 6px; }"
+        )
+        self._default_profile_edit.setReadOnly(True)
+        dp_row.addWidget(self._default_profile_edit, stretch=1)
+
+        self.btn_browse_default = QPushButton("📂")
+        self.btn_browse_default.setFixedWidth(36)
+        self.btn_browse_default.setStyleSheet(
+            "QPushButton { background: #1e40af; color: white; border-radius: 6px;"
+            " padding: 4px; font-size: 14px; }"
+            "QPushButton:hover { background: #2563eb; }"
+        )
+        dp_row.addWidget(self.btn_browse_default)
+
+        self.btn_set_current = QPushButton("現在のプロファイルを設定")
+        self.btn_set_current.setStyleSheet(
+            "QPushButton { background: #4c1d95; color: white; border-radius: 6px;"
+            " padding: 4px 12px; font-size: 11px; }"
+            "QPushButton:hover { background: #6d28d9; }"
+        )
+        dp_row.addWidget(self.btn_set_current)
+
+        self.btn_clear_default = QPushButton("✕")
+        self.btn_clear_default.setFixedWidth(28)
+        self.btn_clear_default.setStyleSheet(
+            "QPushButton { background: #7f1d1d; color: white; border-radius: 6px;"
+            " padding: 2px; font-size: 12px; }"
+            "QPushButton:hover { background: #991b1b; }"
+        )
+        dp_row.addWidget(self.btn_clear_default)
+        sc_layout.addLayout(dp_row)
+
+        # 自動開始チェックボックス
+        self._auto_start_cb = QCheckBox("起動時に自動開始する")
+        self._auto_start_cb.setStyleSheet(
+            "QCheckBox { color: #e0e0e0; font-size: 12px; spacing: 6px; }"
+        )
+        sc_layout.addWidget(self._auto_start_cb)
+
+        # 保存ボタン
+        save_row = QHBoxLayout()
+        save_row.addStretch()
+        self.btn_save_settings = QPushButton("💾 設定を保存")
+        self.btn_save_settings.setStyleSheet(
+            "QPushButton { background: #78350f; color: white; border-radius: 6px;"
+            " padding: 6px 16px; font-size: 12px; }"
+            "QPushButton:hover { background: #92400e; }"
+        )
+        save_row.addWidget(self.btn_save_settings)
+
+        self._settings_status = QLabel("")
+        self._settings_status.setStyleSheet("color: #64748b; font-size: 11px;")
+        save_row.addWidget(self._settings_status)
+        save_row.addStretch()
+        sc_layout.addLayout(save_row)
+
+        layout.addWidget(settings_card)
+
         layout.addStretch()
 
         # フッター
@@ -166,6 +255,21 @@ class DashboardPanel(QWidget):
     def set_mode_info(self, text: str) -> None:
         self._mode_label.setText(f"モード: {text}")
 
+    def set_default_profile_path(self, path: str) -> None:
+        self._default_profile_edit.setText(path)
+
+    def get_default_profile_path(self) -> str:
+        return self._default_profile_edit.text().strip()
+
+    def set_auto_start(self, enabled: bool) -> None:
+        self._auto_start_cb.setChecked(enabled)
+
+    def get_auto_start(self) -> bool:
+        return self._auto_start_cb.isChecked()
+
+    def set_settings_status(self, text: str) -> None:
+        self._settings_status.setText(text)
+
 
 class MainWindow(QMainWindow):
     """アプリのメインウィンドウ."""
@@ -183,6 +287,9 @@ class MainWindow(QMainWindow):
         self._profile = None
         self._profile_path: str | None = None
 
+        # 設定読み込み
+        self._app_settings = load_settings()
+
         self._setup_style()
         self._setup_ui()
         self._initialize_backends()
@@ -192,6 +299,9 @@ class MainWindow(QMainWindow):
         self._gui_timer.setInterval(33)
         self._gui_timer.timeout.connect(self._update_gui)
         self._gui_timer.start()
+
+        # 起動設定の適用 (タイマーで遅延実行して UI初期化完了後に動作させる)
+        QTimer.singleShot(100, self._apply_startup_settings)
 
     def _setup_style(self) -> None:
         app = QApplication.instance()
@@ -234,6 +344,13 @@ class MainWindow(QMainWindow):
         self._dashboard.btn_load_profile.clicked.connect(self._on_load_profile)
         self._dashboard.btn_start.clicked.connect(self._on_start)
         self._dashboard.btn_stop.clicked.connect(self._on_stop)
+        self._dashboard.btn_browse_default.clicked.connect(self._on_browse_default_profile)
+        self._dashboard.btn_set_current.clicked.connect(self._on_set_current_as_default)
+        self._dashboard.btn_clear_default.clicked.connect(self._on_clear_default_profile)
+        self._dashboard.btn_save_settings.clicked.connect(self._on_save_settings)
+        # 設定値をDashboardに反映
+        self._dashboard.set_default_profile_path(self._app_settings.default_profile)
+        self._dashboard.set_auto_start(self._app_settings.auto_start)
         self._tabs.addTab(self._dashboard, "🏠 Dashboard")
 
         # Devices
@@ -417,15 +534,27 @@ class MainWindow(QMainWindow):
             return {}
         return resolve_device_aliases(self._profile, self._input_backend.get_devices())
 
-    def _on_load_profile(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "プロファイルを開く",
-            str(Path.cwd()),
-            "YAML Files (*.yaml *.yml);;All Files (*)",
-        )
-        if not path:
-            return
+    def _apply_startup_settings(self) -> None:
+        """起動設定に基づいてデフォルトプロファイルの読み込みと自動開始を行う."""
+        s = self._app_settings
+        if s.default_profile:
+            profile_path = Path(s.default_profile)
+            if profile_path.exists():
+                logger.info("デフォルトプロファイルを自動読み込み: %s", profile_path)
+                success = self._load_profile_by_path(str(profile_path))
+                if success and s.auto_start:
+                    logger.info("自動開始: パイプラインを起動します")
+                    self._start_pipeline("自動開始")
+                elif not success:
+                    logger.warning("デフォルトプロファイルの読み込みに失敗 → 自動開始をスキップ")
+            else:
+                logger.warning("デフォルトプロファイルが見つかりません: %s", profile_path)
+                self._status_main.setText(f"デフォルトプロファイル未検出: {profile_path}")
+        elif s.auto_start:
+            logger.info("デフォルトプロファイルが未設定のため自動開始をスキップ")
+
+    def _load_profile_by_path(self, path: str) -> bool:
+        """指定パスのプロファイルを読み込む. 成功時 True を返す."""
         was_running = self._scheduler.is_running
         if was_running:
             self._scheduler.stop()
@@ -442,7 +571,6 @@ class MainWindow(QMainWindow):
             self._dashboard.set_profile_info(
                 f"{self._profile.name} ({len(self._profile.rules)} ルール)"
             )
-            # モードパネルを更新
             if self._pipeline.mode_manager is not None:
                 self._modes_panel.set_mode_manager(self._pipeline.mode_manager)
                 self._dashboard.set_mode_info(self._pipeline.mode_manager.current)
@@ -451,10 +579,22 @@ class MainWindow(QMainWindow):
         except (ProfileLoadError, Exception) as e:
             logger.error("プロファイル読み込みエラー: %s", e)
             QMessageBox.critical(self, "エラー", f"プロファイル読み込みに失敗しました:\n{e}")
-            return
+            return False
 
         if was_running:
             self._start_pipeline("プロファイル読み込み完了 / 動作再開")
+        return True
+
+    def _on_load_profile(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "プロファイルを開く",
+            str(Path.cwd()),
+            "YAML Files (*.yaml *.yml);;All Files (*)",
+        )
+        if not path:
+            return
+        self._load_profile_by_path(path)
 
     def _on_start(self) -> None:
         if self._scheduler.is_running:
@@ -541,6 +681,42 @@ class MainWindow(QMainWindow):
         if raw is not None and filtered is not None and output is not None:
             self._monitor_panel.update_state(raw, filtered, output)
             self._output_panel.update_output(output)
+
+    # ─── 起動設定ハンドラ ───
+
+    def _on_browse_default_profile(self) -> None:
+        """デフォルトプロファイルをファイル選択ダイアログで選ぶ."""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "デフォルトプロファイルを選択",
+            str(Path.cwd()),
+            "YAML Files (*.yaml *.yml);;All Files (*)",
+        )
+        if path:
+            self._dashboard.set_default_profile_path(path)
+
+    def _on_set_current_as_default(self) -> None:
+        """現在読み込み中のプロファイルをデフォルトに設定する."""
+        if self._profile_path:
+            self._dashboard.set_default_profile_path(self._profile_path)
+            self._dashboard.set_settings_status("現在のプロファイルをデフォルトに設定")
+        else:
+            QMessageBox.information(self, "情報", "プロファイルが読み込まれていません。")
+
+    def _on_clear_default_profile(self) -> None:
+        """デフォルトプロファイルをクリアする."""
+        self._dashboard.set_default_profile_path("")
+        self._dashboard.set_settings_status("デフォルトプロファイルをクリア")
+
+    def _on_save_settings(self) -> None:
+        """起動設定を保存する."""
+        self._app_settings.default_profile = self._dashboard.get_default_profile_path()
+        self._app_settings.auto_start = self._dashboard.get_auto_start()
+        save_settings(self._app_settings)
+        path = settings_file_path()
+        self._dashboard.set_settings_status(f"保存済み: {path}")
+        logger.info("起動設定を保存: default_profile=%s, auto_start=%s",
+                    self._app_settings.default_profile, self._app_settings.auto_start)
 
     def closeEvent(self, event) -> None:
         self._gui_timer.stop()

@@ -1,0 +1,51 @@
+profile:
+  name: DCS_F16_X56
+  version: 1
+devices:
+  x56_stick:
+    match:
+      name_contains: X56
+      role: stick
+  x56_throttle:
+    match:
+      name_contains: X56
+      role: throttle
+output:
+  type: vjoy
+  device_id: 1
+global:
+  update_rate_hz: 500
+  gui_rate_hz: 30
+modes:
+  default: nav
+  definitions:
+  - nav
+  - aa
+  - ag
+rules:
+- name: airbrake
+  mode: '*'
+  input:
+    device: x56_throttle
+    type: button_pair
+    index: 32
+    negative_index: 0
+    positive_index: 0
+  filters:
+    debounce_ms: 200.0
+  transform:
+    type: button_split
+    on_button: 0
+    off_button: 1
+  output:
+    type: button
+    index: 0
+- name: wheelbrake
+  mode: '*'
+  input:
+    device: x56_stick
+    type: axis
+    index: 1
+  output:
+    type: button
+    index: 0
