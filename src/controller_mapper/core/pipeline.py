@@ -19,7 +19,7 @@ from controller_mapper.filters.smoothing import EwmaFilter
 from controller_mapper.transforms.axis_to_axis import AxisToAxisTransform
 from controller_mapper.transforms.axis_to_button import AxisToButtonTransform, AxisToDualButtonTransform
 from controller_mapper.transforms.button_to_axis import ButtonToAxisTransform, ButtonPairToAxisTransform
-from controller_mapper.transforms.button_to_button import ButtonToButtonTransform
+from controller_mapper.transforms.button_to_button import ButtonSplitTransform, ButtonToButtonTransform
 from controller_mapper.transforms.mode_switch import ModeManager
 
 logger = logging.getLogger(__name__)
@@ -59,9 +59,16 @@ class RuleProcessor:
                     pos_off=float(pos.get("off_threshold", 0.45)),
                 )
             else:
+                # axis_negative_to_button か negative_direction フラグで
+                # 軸の-方向を判定する
+                is_negative = (
+                    t.type == "axis_negative_to_button"
+                    or t.negative_direction
+                )
                 self._transform = AxisToButtonTransform(
                     on_threshold=t.on_threshold,
                     off_threshold=t.off_threshold,
+                    negative=is_negative,
                 )
         elif r.input.type == "button" and r.output.type == "axis":
             self._transform = ButtonToAxisTransform(
@@ -74,8 +81,15 @@ class RuleProcessor:
                 speed_per_sec=t.speed_per_sec,
                 return_to_center=t.return_to_center,
             )
+        elif r.input.type == "button" and r.output.type == "button" and t.type == "button_split":
+            # button_split: ON/OFF を2つの仮想ボタンに分割
+            self._transform = ButtonSplitTransform(
+                on_button=t.on_button,
+                off_button=t.off_button,
+                debounce_ms=f.debounce_ms,
+            )
         else:
-            # button → button
+            # button → button (通常)
             self._transform = ButtonToButtonTransform(
                 debounce_ms=f.debounce_ms,
                 minimum_on_ms=f.minimum_on_ms,
@@ -87,10 +101,11 @@ class RuleProcessor:
         self,
         raw_state: InputState,
         output: OutputState,
+        filtered_devices: dict[str, DeviceState],
         now: float,
         device_aliases: dict[str, str] | None = None,
     ) -> None:
-        """ルールを適用してOutputStateを更新する."""
+        """ルールを適用してOutputStateとFilteredStateを更新する."""
         r = self.rule
         input_device = r.input.device
         if device_aliases is not None:
@@ -98,6 +113,9 @@ class RuleProcessor:
         device_state = raw_state.devices.get(input_device)
         if device_state is None:
             return
+
+        # FilteredState 用のデバイス取得/作成
+        flt_dev = filtered_devices.get(input_device)
 
         inp_type = r.input.type
         out_type = r.output.type
@@ -107,6 +125,9 @@ class RuleProcessor:
             result = self._transform.process(raw_val)
             out_name = r.output.name or "x"
             output.axes[out_name] = result
+            # FilteredState に軸フィルタ結果を反映
+            if flt_dev is not None:
+                flt_dev.axes[r.input.index] = result
 
         elif inp_type == "axis" and out_type == "button":
             raw_val = device_state.axes.get(r.input.index, 0.0)
@@ -135,11 +156,23 @@ class RuleProcessor:
             out_name = r.output.name or "x"
             output.axes[out_name] = result
 
+        elif inp_type == "button" and out_type == "button" and isinstance(self._transform, ButtonSplitTransform):
+            # button_split: ON/OFF を2つの仮想ボタンに分割
+            raw_val = device_state.buttons.get(r.input.index, False)
+            on_result, off_result = self._transform.process(raw_val, now)
+            output.buttons[self._transform.on_button] = on_result
+            output.buttons[self._transform.off_button] = off_result
+            if flt_dev is not None:
+                flt_dev.buttons[r.input.index] = on_result
+
         else:
-            # button → button
+            # button → button (通常)
             raw_val = device_state.buttons.get(r.input.index, False)
             result = self._transform.process(raw_val, now)
             output.buttons[r.output.index] = result
+            # FilteredState にデバウンス結果を反映
+            if flt_dev is not None:
+                flt_dev.buttons[r.input.index] = result
 
 
 class Pipeline:
@@ -179,10 +212,20 @@ class Pipeline:
     def mode_manager(self) -> ModeManager | None:
         return self._mode_manager
 
+    @property
+    def rules(self) -> list[RuleProcessor]:
+        """ルール一覧を返す (GUI参照用)."""
+        return list(self._rules)
+
     def process(self, raw: InputState) -> tuple[FilteredState, OutputState]:
         """生入力を変換してFilteredStateとOutputStateを返す."""
         now = time.monotonic()
         output = OutputState()
+
+        # FilteredState: rawをコピーした上でルール処理時にフィルタ結果を上書きする
+        filtered_devices: dict[str, DeviceState] = {
+            k: v.copy() for k, v in raw.devices.items()
+        }
 
         current_mode = self._mode_manager.current if self._mode_manager else "*"
 
@@ -191,13 +234,12 @@ class Pipeline:
             if self._mode_manager and not self._mode_manager.matches(rp.rule.mode):
                 continue
             try:
-                rp.process(raw, output, now, self._device_aliases)
+                rp.process(raw, output, filtered_devices, now, self._device_aliases)
             except Exception as e:
                 logger.error("ルール '%s' 処理エラー: %s", rp.rule.name, e)
 
-        # FilteredState は今はraw_stateをコピーするだけ (将来的に軸フィルタ結果を入れる)
         filtered = FilteredState(
             timestamp=raw.timestamp,
-            devices={k: v.copy() for k, v in raw.devices.items()},
+            devices=filtered_devices,
         )
         return filtered, output

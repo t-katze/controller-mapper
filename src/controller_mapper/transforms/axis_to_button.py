@@ -14,12 +14,17 @@ class AxisToButtonTransform:
     Args:
         on_threshold:  ONになる閾値  (off_threshold より大きくすること)
         off_threshold: OFFになる閾値
+        negative:      True のとき軸の負方向で判定する (値を反転してから閾値比較)
     """
 
-    def __init__(self, on_threshold: float = 0.65, off_threshold: float = 0.50) -> None:
+    def __init__(self, on_threshold: float = 0.65, off_threshold: float = 0.50,
+                 negative: bool = False) -> None:
         self._hyst = HysteresisFilter(on_threshold, off_threshold)
+        self._negative = negative
 
     def process(self, value: float) -> bool:
+        if self._negative:
+            value = -value
         return self._hyst.process(value)
 
 

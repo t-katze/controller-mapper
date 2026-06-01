@@ -5,8 +5,9 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
@@ -23,11 +24,23 @@ from PySide6.QtWidgets import (
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class AxisCalibValues:
+    """1軸分のキャリブレーション値."""
+    axis_index: int
+    deadzone: float
+    end_deadzone: float
+    curve: float
+    smoothing: float
+    invert: bool
+
+
 class AxisCalibWidget(QGroupBox):
     """1軸分のキャリブレーション設定."""
 
-    def __init__(self, axis_label: str) -> None:
+    def __init__(self, axis_index: int, axis_label: str) -> None:
         super().__init__(axis_label)
+        self.axis_index = axis_index
         self.setStyleSheet(
             "QGroupBox { color: #fbbf24; font-weight: bold; border: 1px solid #78350f;"
             " border-radius: 6px; margin-top: 8px; }"
@@ -74,9 +87,26 @@ class AxisCalibWidget(QGroupBox):
         self.invert.setStyleSheet("QCheckBox { color: #e0e0e0; }")
         form.addRow("反転:", self.invert)
 
+    def get_values(self) -> AxisCalibValues:
+        """現在の設定値を返す."""
+        return AxisCalibValues(
+            axis_index=self.axis_index,
+            deadzone=self.deadzone.value(),
+            end_deadzone=self.end_deadzone.value(),
+            curve=self.curve.value(),
+            smoothing=self.smoothing.value(),
+            invert=self.invert.isChecked(),
+        )
+
 
 class CalibrationPanel(QWidget):
-    """軸キャリブレーションパネル."""
+    """軸キャリブレーションパネル.
+
+    Signals:
+        calibration_applied: 適用ボタン押下時に (軸インデックス, 値) リストを通知する.
+    """
+
+    calibration_applied: Signal = Signal(list)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -124,9 +154,20 @@ class CalibrationPanel(QWidget):
             w.deleteLater()
         self._axis_widgets.clear()
         for i in range(num_axes):
-            w = AxisCalibWidget(f"Axis {i}")
+            w = AxisCalibWidget(i, f"Axis {i}")
             self._content_layout.addWidget(w)
             self._axis_widgets.append(w)
 
+    def get_calibration_values(self) -> list[AxisCalibValues]:
+        """すべての軸のキャリブレーション値を返す."""
+        return [w.get_values() for w in self._axis_widgets]
+
     def _on_apply(self) -> None:
-        logger.info("キャリブレーション値を適用 (現バージョンはUI表示のみ)")
+        """適用ボタン押下: キャリブレーション値をシグナルで通知する."""
+        values = self.get_calibration_values()
+        self.calibration_applied.emit(values)
+        logger.info(
+            "キャリブレーション値を適用: %d 軸",
+            len(values),
+        )
+

@@ -28,7 +28,9 @@ from controller_mapper.app.calibration_panel import CalibrationPanel
 from controller_mapper.app.device_panel import DevicePanel
 from controller_mapper.app.log_panel import LogPanel
 from controller_mapper.app.mapping_editor import MappingEditor
+from controller_mapper.app.modes_panel import ModesPanel
 from controller_mapper.app.monitor_panel import MonitorPanel
+from controller_mapper.app.output_panel import OutputPanel
 from controller_mapper.config.loader import load_profile
 from controller_mapper.core.errors import (
     InputBackendError,
@@ -95,6 +97,10 @@ class DashboardPanel(QWidget):
         self._output_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
         card_layout.addWidget(self._output_label)
 
+        self._mode_label = QLabel("モード: —")
+        self._mode_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        card_layout.addWidget(self._mode_label)
+
         layout.addWidget(self._card)
 
         # ボタン行
@@ -157,6 +163,9 @@ class DashboardPanel(QWidget):
     def set_output_info(self, text: str) -> None:
         self._output_label.setText(f"出力: {text}")
 
+    def set_mode_info(self, text: str) -> None:
+        self._mode_label.setText(f"モード: {text}")
+
 
 class MainWindow(QMainWindow):
     """アプリのメインウィンドウ."""
@@ -172,6 +181,7 @@ class MainWindow(QMainWindow):
         self._pipeline = Pipeline()
         self._scheduler = Scheduler()
         self._profile = None
+        self._profile_path: str | None = None
 
         self._setup_style()
         self._setup_ui()
@@ -237,11 +247,22 @@ class MainWindow(QMainWindow):
 
         # Calibration
         self._calib_panel = CalibrationPanel()
+        self._calib_panel.calibration_applied.connect(self._on_calibration_applied)
         self._tabs.addTab(self._calib_panel, "🎯 Calibration")
 
         # Mapping
         self._mapping_editor = MappingEditor()
+        self._mapping_editor.profile_changed.connect(self._on_profile_edited)
         self._tabs.addTab(self._mapping_editor, "🗺 Mapping")
+
+        # Modes
+        self._modes_panel = ModesPanel()
+        self._modes_panel.mode_changed.connect(self._on_mode_changed)
+        self._tabs.addTab(self._modes_panel, "🎚 Modes")
+
+        # Output
+        self._output_panel = OutputPanel()
+        self._tabs.addTab(self._output_panel, "📤 Output")
 
         # Logs
         self._log_panel = LogPanel()
@@ -289,6 +310,7 @@ class MainWindow(QMainWindow):
     def _update_output_status(self) -> None:
         text = self._output_status_text()
         self._dashboard.set_output_info(text)
+        self._output_panel.set_backend_info(text)
         self._status_backend.setText(f"出力: {text}")
 
     def _set_output_backend(self, backend) -> None:
@@ -410,15 +432,20 @@ class MainWindow(QMainWindow):
             self._dashboard.set_running(False)
         try:
             self._profile = load_profile(path)
+            self._profile_path = path
             self._pipeline.load_profile(
                 self._profile,
                 device_aliases=self._resolve_profile_device_aliases(),
             )
-            self._mapping_editor.load_profile(self._profile)
+            self._mapping_editor.load_profile(self._profile, path)
             self._configure_output_backend_from_profile()
             self._dashboard.set_profile_info(
                 f"{self._profile.name} ({len(self._profile.rules)} ルール)"
             )
+            # モードパネルを更新
+            if self._pipeline.mode_manager is not None:
+                self._modes_panel.set_mode_manager(self._pipeline.mode_manager)
+                self._dashboard.set_mode_info(self._pipeline.mode_manager.current)
             self._status_main.setText(f"プロファイル読み込み完了: {self._profile.name}")
             logger.info("プロファイル読み込み: %s", path)
         except (ProfileLoadError, Exception) as e:
@@ -440,6 +467,67 @@ class MainWindow(QMainWindow):
         self._status_main.setText("停止しました")
         logger.info("変換パイプライン停止")
 
+    def _on_mode_changed(self, new_mode: str) -> None:
+        """モードパネルからのモード変更通知を処理する."""
+        self._dashboard.set_mode_info(new_mode)
+        logger.info("GUIからモード変更: %s", new_mode)
+
+    def _on_profile_edited(self) -> None:
+        """マッピングエディタでプロファイルが編集された場合にパイプラインを再構築する."""
+        if self._profile is None:
+            return
+        was_running = self._scheduler.is_running
+        if was_running:
+            self._scheduler.stop()
+            self._dashboard.set_running(False)
+
+        self._pipeline.load_profile(
+            self._profile,
+            device_aliases=self._resolve_profile_device_aliases(),
+        )
+        self._dashboard.set_profile_info(
+            f"{self._profile.name} ({len(self._profile.rules)} ルール) [編集済]"
+        )
+        if self._pipeline.mode_manager is not None:
+            self._modes_panel.set_mode_manager(self._pipeline.mode_manager)
+
+        if was_running:
+            self._start_pipeline("プロファイル再構築完了 / 動作再開")
+
+        logger.info("プロファイル編集を反映: %d ルール", len(self._profile.rules))
+
+    def _on_calibration_applied(self, values: list) -> None:
+        """キャリブレーションパネルの「適用」を処理する.
+
+        現在読み込み中のプロファイルの axis→axis ルールのフィルタ値を
+        キャリブレーション値で上書きし、パイプラインを再構築する.
+        """
+        if self._profile is None:
+            logger.warning("プロファイル未読み込みのためキャリブレーション適用をスキップ")
+            return
+
+        # 軸ルールのフィルタを更新
+        from controller_mapper.app.calibration_panel import AxisCalibValues
+        calib_map: dict[int, AxisCalibValues] = {v.axis_index: v for v in values}
+
+        updated_count = 0
+        for rule in self._profile.rules:
+            if rule.input.type == "axis" and rule.output.type == "axis":
+                cv = calib_map.get(rule.input.index)
+                if cv is not None:
+                    rule.filters.deadzone = cv.deadzone
+                    rule.filters.end_deadzone = cv.end_deadzone
+                    rule.filters.curve = cv.curve
+                    rule.filters.smoothing = cv.smoothing
+                    rule.filters.invert = cv.invert
+                    updated_count += 1
+
+        if updated_count > 0:
+            self._on_profile_edited()
+            logger.info("キャリブレーション適用: %d ルールを更新", updated_count)
+        else:
+            logger.info("キャリブレーション適用: 対象ルールなし")
+
     def _update_gui(self) -> None:
         """QTimer で 30 Hz に呼ばれる GUI更新."""
         q = self._scheduler.state_queue
@@ -452,6 +540,7 @@ class MainWindow(QMainWindow):
 
         if raw is not None and filtered is not None and output is not None:
             self._monitor_panel.update_state(raw, filtered, output)
+            self._output_panel.update_output(output)
 
     def closeEvent(self, event) -> None:
         self._gui_timer.stop()

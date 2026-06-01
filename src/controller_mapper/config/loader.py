@@ -153,6 +153,9 @@ def _parse_rule(raw: dict[str, Any]) -> RuleConfig:
             return_to_center=bool(trn_raw.get("return_to_center", False)),
             negative=dict(trn_raw.get("negative", {})),
             positive=dict(trn_raw.get("positive", {})),
+            negative_direction=bool(trn_raw.get("negative_direction", False)),
+            on_button=int(trn_raw.get("on_button", 0)),
+            off_button=int(trn_raw.get("off_button", 1)),
         ),
         output=RuleOutputConfig(
             device=out_raw.get("device", "vjoy1"),
@@ -161,3 +164,149 @@ def _parse_rule(raw: dict[str, Any]) -> RuleConfig:
             name=out_raw.get("name", ""),
         ),
     )
+
+
+# ─────────────────────────────────────────────────────────────────
+# 保存
+# ─────────────────────────────────────────────────────────────────
+
+def save_profile(profile: ProfileConfig, path: str | Path) -> None:
+    """ProfileConfig を YAML ファイルへ保存する.
+
+    Args:
+        profile: 保存するプロファイル
+        path:    書き出し先ファイルパス
+
+    Raises:
+        ProfileLoadError: 書き込み失敗
+    """
+    safe_path = Path(path).resolve()
+    data = _profile_to_dict(profile)
+
+    try:
+        with safe_path.open("w", encoding="utf-8") as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    except OSError as e:
+        raise ProfileLoadError(f"ファイルへ書き込めません: {safe_path}") from e
+
+    logger.info("プロファイルを保存しました: %s", safe_path)
+
+
+def _profile_to_dict(profile: ProfileConfig) -> dict[str, Any]:
+    """ProfileConfig を辞書に変換する (YAML書き出し用)."""
+    data: dict[str, Any] = {}
+
+    data["profile"] = {"name": profile.name, "version": profile.version}
+
+    if profile.devices:
+        data["devices"] = {}
+        for dev_id, dev in profile.devices.items():
+            match_dict: dict[str, str] = {}
+            if dev.match.name_contains:
+                match_dict["name_contains"] = dev.match.name_contains
+            if dev.match.role:
+                match_dict["role"] = dev.match.role
+            data["devices"][dev_id] = {"match": match_dict} if match_dict else None
+
+    data["output"] = {
+        "type": profile.output.type,
+        "device_id": profile.output.device_id,
+    }
+
+    data["global"] = {
+        "update_rate_hz": profile.global_.update_rate_hz,
+        "gui_rate_hz": profile.global_.gui_rate_hz,
+    }
+
+    data["modes"] = {
+        "default": profile.modes.default,
+        "definitions": profile.modes.definitions,
+    }
+
+    data["rules"] = [_rule_to_dict(r) for r in profile.rules]
+    return data
+
+
+def _rule_to_dict(rule: RuleConfig) -> dict[str, Any]:
+    """RuleConfig を辞書に変換する."""
+    d: dict[str, Any] = {"name": rule.name}
+    if rule.mode != "*":
+        d["mode"] = rule.mode
+    else:
+        d["mode"] = "*"
+
+    # input
+    inp: dict[str, Any] = {
+        "device": rule.input.device,
+        "type": rule.input.type,
+        "index": rule.input.index,
+    }
+    if rule.input.type == "button_pair":
+        if rule.input.negative_index is not None:
+            inp["negative_index"] = rule.input.negative_index
+        if rule.input.positive_index is not None:
+            inp["positive_index"] = rule.input.positive_index
+    d["input"] = inp
+
+    # filters (デフォルト値でないもののみ出力)
+    f = rule.filters
+    flt: dict[str, Any] = {}
+    if f.debounce_ms > 0:
+        flt["debounce_ms"] = f.debounce_ms
+    if f.minimum_on_ms > 0:
+        flt["minimum_on_ms"] = f.minimum_on_ms
+    if f.minimum_off_ms > 0:
+        flt["minimum_off_ms"] = f.minimum_off_ms
+    if f.deadzone > 0:
+        flt["deadzone"] = f.deadzone
+    if f.end_deadzone > 0:
+        flt["end_deadzone"] = f.end_deadzone
+    if f.curve != 1.0:
+        flt["curve"] = f.curve
+    if f.invert:
+        flt["invert"] = True
+    if f.smoothing > 0:
+        flt["smoothing"] = f.smoothing
+    if f.toggle:
+        flt["toggle"] = True
+    if flt:
+        d["filters"] = flt
+
+    # transform (typeが空でないときのみ出力)
+    t = rule.transform
+    if t.type:
+        trn: dict[str, Any] = {"type": t.type}
+        if t.type in ("axis_to_button",):
+            trn["on_threshold"] = t.on_threshold
+            trn["off_threshold"] = t.off_threshold
+        elif t.type == "axis_negative_to_button":
+            trn["on_threshold"] = t.on_threshold
+            trn["off_threshold"] = t.off_threshold
+            if t.negative_direction:
+                trn["negative_direction"] = True
+        elif t.type == "axis_to_dual_button":
+            trn["negative"] = dict(t.negative)
+            trn["positive"] = dict(t.positive)
+        elif t.type in ("button_to_axis",):
+            trn["released_value"] = t.released_value
+            trn["pressed_value"] = t.pressed_value
+        elif t.type in ("buttons_to_axis",):
+            trn["mode"] = t.mode
+            trn["speed_per_sec"] = t.speed_per_sec
+            trn["return_to_center"] = t.return_to_center
+        elif t.type == "button_split":
+            trn["on_button"] = t.on_button
+            trn["off_button"] = t.off_button
+        d["transform"] = trn
+
+    # output
+    out: dict[str, Any] = {"type": rule.output.type}
+    if rule.output.type == "axis":
+        if rule.output.name:
+            out["name"] = rule.output.name
+    else:
+        out["index"] = rule.output.index
+    d["output"] = out
+
+    return d
+

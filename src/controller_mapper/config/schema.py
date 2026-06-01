@@ -62,7 +62,8 @@ class FiltersConfig:
 @dataclass
 class TransformConfig:
     type: str = ""                  # "axis_to_button" | "axis_to_dual_button" |
-                                    # "button_to_axis" | "buttons_to_axis"
+                                    # "button_to_axis" | "buttons_to_axis" |
+                                    # "axis_negative_to_button" | "button_split"
     on_threshold: float = 0.5
     off_threshold: float = 0.4
     released_value: float = 0.0
@@ -72,6 +73,11 @@ class TransformConfig:
     return_to_center: bool = False
     negative: dict[str, Any] = field(default_factory=dict)
     positive: dict[str, Any] = field(default_factory=dict)
+    # axis_negative_to_button: 軸の-方向で判定
+    negative_direction: bool = False
+    # button_split: ON/OFF それぞれ別ボタンに出力
+    on_button: int = 0
+    off_button: int = 1
 
 
 @dataclass
