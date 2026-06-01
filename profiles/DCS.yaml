@@ -67,11 +67,11 @@ rules:
   transform:
     type: axis_to_dual_button
     negative:
-      on_threshold: -0.8
-      off_threshold: -0.8
+      on_threshold: -0.7
+      off_threshold: -0.7
     positive:
-      on_threshold: 0.8
-      off_threshold: 0.8
+      on_threshold: 0.7
+      off_threshold: 0.7
   output:
     type: button
     index: 4
@@ -87,11 +87,11 @@ rules:
   transform:
     type: axis_to_dual_button
     negative:
-      on_threshold: -0.8
-      off_threshold: -0.8
+      on_threshold: -0.7
+      off_threshold: -0.7
     positive:
-      on_threshold: 0.8
-      off_threshold: 0.8
+      on_threshold: 0.7
+      off_threshold: 0.7
   output:
     type: button
     index: 6
