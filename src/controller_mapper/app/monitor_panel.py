@@ -113,6 +113,9 @@ class DeviceMonitorWidget(QGroupBox):
     def __init__(self, device_id: str, device_name: str,
                  num_axes: int, num_buttons: int, num_hats: int) -> None:
         super().__init__(f"{device_name} ({device_id})")
+        self._device_id = device_id
+        self._device_name = device_name
+        self._alias: str = ""
         self.setStyleSheet(
             "QGroupBox { color: #a78bfa; font-weight: bold; border: 1px solid #4c1d95;"
             " border-radius: 6px; margin-top: 8px; }"
@@ -170,6 +173,18 @@ class DeviceMonitorWidget(QGroupBox):
         for i, lbl in enumerate(self._hat_labels):
             hat_val = raw_state.get("hats", {}).get(i, (0, 0))
             lbl.setText(str(hat_val))
+
+    def _update_title(self) -> None:
+        """グループボックスのタイトルを更新する."""
+        if self._alias:
+            self.setTitle(f"{self._device_name} — [{self._alias}] ({self._device_id})")
+        else:
+            self.setTitle(f"{self._device_name} ({self._device_id})")
+
+    def set_alias(self, alias: str) -> None:
+        """プロファイルの論理デバイス名を設定する."""
+        self._alias = alias
+        self._update_title()
 
 
 class MonitorPanel(QWidget):
@@ -235,6 +250,19 @@ class MonitorPanel(QWidget):
             self._content_layout.addWidget(w)
             self._device_widgets[dev.device_id] = w
         self._output_axes_label.setText("(出力なし: 停止中 / プロファイル未読み込み / 一致するルールなし)")
+
+    def set_device_aliases(self, aliases: dict[str, str]) -> None:
+        """プロファイルのデバイス別名をモニタウィジェットに反映する.
+
+        Args:
+            aliases: {論理名: pygame_id} の形式.
+                     例: {"x56_stick": "pygame_2", "x56_throttle": "pygame_3"}
+        """
+        # 逆引きマップ: pygame_id -> 論理名
+        id_to_alias: dict[str, str] = {v: k for k, v in aliases.items()}
+        for dev_id, widget in self._device_widgets.items():
+            alias = id_to_alias.get(dev_id, "")
+            widget.set_alias(alias)
 
     def update_state(
         self,

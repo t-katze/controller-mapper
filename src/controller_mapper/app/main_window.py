@@ -562,12 +562,15 @@ class MainWindow(QMainWindow):
         try:
             self._profile = load_profile(path)
             self._profile_path = path
+            aliases = self._resolve_profile_device_aliases()
             self._pipeline.load_profile(
                 self._profile,
-                device_aliases=self._resolve_profile_device_aliases(),
+                device_aliases=aliases,
             )
             self._mapping_editor.load_profile(self._profile, path)
             self._configure_output_backend_from_profile()
+            # モニタにプロファイルのデバイス論理名を反映
+            self._monitor_panel.set_device_aliases(aliases)
             self._dashboard.set_profile_info(
                 f"{self._profile.name} ({len(self._profile.rules)} ルール)"
             )
