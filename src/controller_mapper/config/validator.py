@@ -22,9 +22,9 @@ def validate_profile(profile: ProfileConfig) -> None:
 
 def _validate_rule(index: int, rule: RuleConfig) -> None:
     if not rule.name:
-        raise ProfileValidationError(f"rules[{index}].name が空です")
+        logger.warning("rules[%d].name が空です", index)
     if not rule.input.device:
-        raise ProfileValidationError(f"rules[{index}] ({rule.name}): input.device が空です")
+        logger.warning("rules[%d] (%s): input.device が空です", index, rule.name)
 
     filters = rule.filters
     if filters.debounce_ms < 0:

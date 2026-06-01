@@ -19,6 +19,9 @@ class AxisToButtonTransform:
 
     def __init__(self, on_threshold: float = 0.65, off_threshold: float = 0.50,
                  negative: bool = False) -> None:
+        if negative:
+            on_threshold = abs(on_threshold)
+            off_threshold = abs(off_threshold)
         self._hyst = HysteresisFilter(on_threshold, off_threshold)
         self._negative = negative
 

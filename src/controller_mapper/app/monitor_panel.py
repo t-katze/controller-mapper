@@ -34,6 +34,15 @@ _AXIS_BAR_STYLE = (
     "  stop:0 #4c1d95, stop:1 #7c3aed); border-radius: 2px; }"
 )
 
+_OUTPUT_AXIS_BAR_STYLE = (
+    "QProgressBar {"
+    "  border: 1px solid #064e3b; border-radius: 3px;"
+    "  background: #0f1f35; text-align: center; color: #e0e0e0; font-size: 11px;"
+    "}"
+    "QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+    "  stop:0 #065f46, stop:1 #10b981); border-radius: 2px; }"
+)
+
 _BTN_ON_STYLE = (
     "QLabel { background: #10b981; color: white; border-radius: 4px;"
     " font-size: 10px; font-weight: bold; padding: 2px 6px; }"
@@ -42,6 +51,8 @@ _BTN_OFF_STYLE = (
     "QLabel { background: #374151; color: #9ca3af; border-radius: 4px;"
     " font-size: 10px; padding: 2px 6px; }"
 )
+
+_OUTPUT_EMPTY_STYLE = "color: #64748b; font-size: 11px; padding: 4px 0;"
 
 
 class _AxisRow(QWidget):
@@ -105,6 +116,161 @@ class _ButtonGrid(QWidget):
         for i, lbl in enumerate(self._labels):
             pressed = buttons.get(i, False)
             lbl.setStyleSheet(_BTN_ON_STYLE if pressed else _BTN_OFF_STYLE)
+
+
+class _OutputAxisRow(QWidget):
+    """仮想デバイス出力の1軸分の表示行."""
+
+    def __init__(self, label: str) -> None:
+        super().__init__()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(2, 1, 2, 1)
+        layout.setSpacing(6)
+
+        self._name_lbl = QLabel(label.upper())
+        self._name_lbl.setFixedWidth(70)
+        self._name_lbl.setStyleSheet("color: #10b981; font-size: 11px; font-weight: bold;")
+        layout.addWidget(self._name_lbl)
+
+        self._bar = QProgressBar()
+        self._bar.setRange(0, 1000)
+        self._bar.setValue(500)
+        self._bar.setFixedHeight(14)
+        self._bar.setStyleSheet(_OUTPUT_AXIS_BAR_STYLE)
+        self._bar.setTextVisible(False)
+        layout.addWidget(self._bar, stretch=1)
+
+        self._value_lbl = QLabel("+0.000")
+        self._value_lbl.setFixedWidth(55)
+        self._value_lbl.setStyleSheet("color: #6bcb77; font-size: 11px; font-family: monospace;")
+        layout.addWidget(self._value_lbl)
+
+    def update_value(self, value: float) -> None:
+        self._value_lbl.setText(f"{value:+.3f}")
+        bar_val = int((value + 1.0) / 2.0 * 1000)
+        self._bar.setValue(max(0, min(1000, bar_val)))
+
+
+class _OutputButtonGrid(QWidget):
+    """仮想デバイス出力ボタンのグリッド表示."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._labels: dict[int, QLabel] = {}
+        self._grid = QGridLayout(self)
+        self._grid.setContentsMargins(2, 2, 2, 2)
+        self._grid.setSpacing(3)
+
+    def update_buttons(self, buttons: dict[int, bool]) -> None:
+        for btn_idx in sorted(buttons):
+            if btn_idx not in self._labels:
+                self._add_label(btn_idx)
+
+        for btn_idx, lbl in self._labels.items():
+            visible = btn_idx in buttons
+            pressed = buttons.get(btn_idx, False)
+            lbl.setVisible(visible)
+            lbl.setText(f"B{btn_idx}:ON" if pressed else f"B{btn_idx}")
+            lbl.setStyleSheet(_BTN_ON_STYLE if pressed else _BTN_OFF_STYLE)
+
+    def _add_label(self, btn_idx: int) -> None:
+        lbl = QLabel(f"B{btn_idx}")
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setFixedSize(48, 20)
+        lbl.setStyleSheet(_BTN_OFF_STYLE)
+        cols = 8
+        position = len(self._labels)
+        self._grid.addWidget(lbl, position // cols, position % cols)
+        self._labels[btn_idx] = lbl
+
+
+class _OutputMonitorWidget(QGroupBox):
+    """Monitor タブ内の仮想デバイス出力表示."""
+
+    def __init__(self) -> None:
+        super().__init__("Output (仮想デバイス)")
+        self._axis_rows: dict[str, _OutputAxisRow] = {}
+        self.setStyleSheet(
+            "QGroupBox { color: #6bcb77; font-weight: bold; border: 1px solid #065f46;"
+            " border-radius: 6px; margin-top: 8px; }"
+            "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }"
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 12, 8, 8)
+        layout.setSpacing(4)
+
+        self._empty_label = QLabel("")
+        self._empty_label.setStyleSheet(_OUTPUT_EMPTY_STYLE)
+        layout.addWidget(self._empty_label)
+
+        self._axis_header = QWidget()
+        axis_header_layout = QHBoxLayout(self._axis_header)
+        axis_header_layout.setContentsMargins(0, 0, 0, 0)
+        axis_header_layout.addWidget(
+            QLabel("出力軸", styleSheet="color: #10b981; font-size: 11px; font-weight:bold;")
+        )
+        axis_header_layout.addStretch()
+        axis_header_layout.addWidget(
+            QLabel("値", styleSheet="color: #6bcb77; font-size: 11px;")
+        )
+        layout.addWidget(self._axis_header)
+
+        self._axes_layout = QVBoxLayout()
+        self._axes_layout.setSpacing(1)
+        layout.addLayout(self._axes_layout)
+
+        self._button_label = QLabel(
+            "出力ボタン",
+            styleSheet="color: #10b981; font-size: 11px; font-weight:bold; margin-top:4px;",
+        )
+        layout.addWidget(self._button_label)
+
+        self._button_grid = _OutputButtonGrid()
+        layout.addWidget(self._button_grid)
+        self.set_empty_message("(出力なし: 停止中 / プロファイル未読み込み / 一致するルールなし)")
+
+    def set_empty_message(self, text: str) -> None:
+        self._empty_label.setText(text)
+        self._empty_label.setVisible(True)
+        self._axis_header.setVisible(False)
+        self._button_label.setVisible(False)
+        self._button_grid.setVisible(False)
+        for row in self._axis_rows.values():
+            row.setVisible(False)
+
+    def update_output(self, output: OutputState) -> None:
+        axes = output.axes
+        buttons = output.buttons
+        has_axes = bool(axes)
+        has_buttons = bool(buttons)
+
+        self._empty_label.setVisible(not (has_axes or has_buttons))
+        if not (has_axes or has_buttons):
+            self._axis_header.setVisible(False)
+            self._button_label.setVisible(False)
+            self._button_grid.setVisible(False)
+            for row in self._axis_rows.values():
+                row.setVisible(False)
+            return
+
+        self._axis_header.setVisible(has_axes)
+        for axis_name in sorted(axes):
+            if axis_name not in self._axis_rows:
+                row = _OutputAxisRow(axis_name)
+                self._axes_layout.addWidget(row)
+                self._axis_rows[axis_name] = row
+
+        for axis_name, row in self._axis_rows.items():
+            visible = axis_name in axes
+            row.setVisible(visible)
+            if visible:
+                row.update_value(axes[axis_name])
+
+        self._button_label.setVisible(has_buttons)
+        self._button_grid.setVisible(has_buttons)
+        if has_buttons:
+            self._button_grid.update_buttons(buttons)
 
 
 class DeviceMonitorWidget(QGroupBox):
@@ -219,17 +385,8 @@ class MonitorPanel(QWidget):
         outer.addWidget(scroll)
 
         # 出力セクション
-        self._output_group = QGroupBox("Output (仮想デバイス)")
-        self._output_group.setStyleSheet(
-            "QGroupBox { color: #6bcb77; font-weight: bold; border: 1px solid #065f46;"
-            " border-radius: 6px; margin-top: 8px; }"
-            "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }"
-        )
-        self._output_layout = QVBoxLayout(self._output_group)
-        self._output_axes_label = QLabel("(なし)")
-        self._output_axes_label.setStyleSheet("color: #9ca3af; font-family: monospace; font-size: 11px;")
-        self._output_layout.addWidget(self._output_axes_label)
-        outer.addWidget(self._output_group)
+        self._output_monitor = _OutputMonitorWidget()
+        outer.addWidget(self._output_monitor)
 
     def setup_devices(self, devices: list) -> None:
         """デバイス情報からモニタウィジェットを構築する."""
@@ -249,7 +406,9 @@ class MonitorPanel(QWidget):
             )
             self._content_layout.addWidget(w)
             self._device_widgets[dev.device_id] = w
-        self._output_axes_label.setText("(出力なし: 停止中 / プロファイル未読み込み / 一致するルールなし)")
+        self._output_monitor.set_empty_message(
+            "(出力なし: 停止中 / プロファイル未読み込み / 一致するルールなし)"
+        )
 
     def set_device_aliases(self, aliases: dict[str, str]) -> None:
         """プロファイルのデバイス別名をモニタウィジェットに反映する.
@@ -283,12 +442,4 @@ class MonitorPanel(QWidget):
             )
 
         # 出力表示
-        if output.axes or output.buttons:
-            lines = []
-            for name, val in sorted(output.axes.items()):
-                lines.append(f"  {name}: {val:+.3f}")
-            for idx, pressed in sorted(output.buttons.items()):
-                lines.append(f"  Btn{idx}: {'ON ' if pressed else 'OFF'}")
-            self._output_axes_label.setText("\n".join(lines) if lines else "(なし)")
-        else:
-            self._output_axes_label.setText("(出力なし: 停止中 / プロファイル未読み込み / 一致するルールなし)")
+        self._output_monitor.update_output(output)

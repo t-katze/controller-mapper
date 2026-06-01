@@ -120,6 +120,18 @@ def _parse_rule(raw: dict[str, Any]) -> RuleConfig:
     flt_raw = raw.get("filters", {})
     trn_raw = raw.get("transform", {})
     out_raw = raw.get("output", {})
+    trn_type = trn_raw.get("type", "")
+    negative_raw = dict(trn_raw.get("negative", {}))
+    positive_raw = dict(trn_raw.get("positive", {}))
+    output_index = int(
+        negative_raw.get("output_button", out_raw.get("index", 0))
+        if trn_type == "axis_to_dual_button"
+        else out_raw.get("index", 0)
+    )
+    output_positive_index = out_raw.get("positive_index")
+    if trn_type == "axis_to_dual_button" and output_positive_index is None:
+        output_positive_index = positive_raw.get("output_button", min(output_index + 1, 127))
+    split_off_default = min(output_index + 1, 127)
 
     return RuleConfig(
         name=raw.get("name", ""),
@@ -130,6 +142,8 @@ def _parse_rule(raw: dict[str, Any]) -> RuleConfig:
             index=int(inp_raw.get("index", 0)),
             negative_index=inp_raw.get("negative_index"),
             positive_index=inp_raw.get("positive_index"),
+            hat_x=int(inp_raw.get("hat_x", 0)),
+            hat_y=int(inp_raw.get("hat_y", 1)),
         ),
         filters=FiltersConfig(
             debounce_ms=float(flt_raw.get("debounce_ms", 0.0)),
@@ -143,7 +157,7 @@ def _parse_rule(raw: dict[str, Any]) -> RuleConfig:
             toggle=bool(flt_raw.get("toggle", False)),
         ),
         transform=TransformConfig(
-            type=trn_raw.get("type", ""),
+            type=trn_type,
             on_threshold=float(trn_raw.get("on_threshold", 0.5)),
             off_threshold=float(trn_raw.get("off_threshold", 0.4)),
             released_value=float(trn_raw.get("released_value", 0.0)),
@@ -151,16 +165,30 @@ def _parse_rule(raw: dict[str, Any]) -> RuleConfig:
             mode=trn_raw.get("mode", "direct"),
             speed_per_sec=float(trn_raw.get("speed_per_sec", 1.0)),
             return_to_center=bool(trn_raw.get("return_to_center", False)),
-            negative=dict(trn_raw.get("negative", {})),
-            positive=dict(trn_raw.get("positive", {})),
+            negative=negative_raw,
+            positive=positive_raw,
             negative_direction=bool(trn_raw.get("negative_direction", False)),
-            on_button=int(trn_raw.get("on_button", 0)),
-            off_button=int(trn_raw.get("off_button", 1)),
+            on_button=(
+                output_index
+                if trn_type == "button_split"
+                else int(trn_raw.get("on_button", 0))
+            ),
+            off_button=int(
+                trn_raw.get(
+                    "off_button",
+                    split_off_default if trn_type == "button_split" else 1,
+                )
+            ),
         ),
         output=RuleOutputConfig(
             device=out_raw.get("device", "vjoy1"),
             type=out_raw.get("type", "button"),
-            index=int(out_raw.get("index", 0)),
+            index=output_index,
+            positive_index=(
+                int(output_positive_index)
+                if output_positive_index is not None
+                else None
+            ),
             name=out_raw.get("name", ""),
         ),
     )
@@ -246,6 +274,9 @@ def _rule_to_dict(rule: RuleConfig) -> dict[str, Any]:
             inp["negative_index"] = rule.input.negative_index
         if rule.input.positive_index is not None:
             inp["positive_index"] = rule.input.positive_index
+    elif rule.input.type == "hat":
+        inp["hat_x"] = rule.input.hat_x
+        inp["hat_y"] = rule.input.hat_y
     d["input"] = inp
 
     # filters (デフォルト値でないもののみ出力)
@@ -285,8 +316,12 @@ def _rule_to_dict(rule: RuleConfig) -> dict[str, Any]:
             if t.negative_direction:
                 trn["negative_direction"] = True
         elif t.type == "axis_to_dual_button":
-            trn["negative"] = dict(t.negative)
-            trn["positive"] = dict(t.positive)
+            trn["negative"] = {
+                k: v for k, v in t.negative.items() if k != "output_button"
+            }
+            trn["positive"] = {
+                k: v for k, v in t.positive.items() if k != "output_button"
+            }
         elif t.type in ("button_to_axis",):
             trn["released_value"] = t.released_value
             trn["pressed_value"] = t.pressed_value
@@ -295,7 +330,6 @@ def _rule_to_dict(rule: RuleConfig) -> dict[str, Any]:
             trn["speed_per_sec"] = t.speed_per_sec
             trn["return_to_center"] = t.return_to_center
         elif t.type == "button_split":
-            trn["on_button"] = t.on_button
             trn["off_button"] = t.off_button
         d["transform"] = trn
 
@@ -306,7 +340,8 @@ def _rule_to_dict(rule: RuleConfig) -> dict[str, Any]:
             out["name"] = rule.output.name
     else:
         out["index"] = rule.output.index
+        if rule.output.positive_index is not None:
+            out["positive_index"] = rule.output.positive_index
     d["output"] = out
 
     return d
-

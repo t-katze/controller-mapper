@@ -28,6 +28,12 @@ MANIFEST
 # PyInstaller
 *.manifest
 *.spec
+!packaging/
+!packaging/*.spec
+
+# Logs / local runtime state
+*.log
+logs/
 
 # Unit test / coverage reports
 .pytest_cache/
@@ -44,6 +50,7 @@ coverage.xml
 # Environments
 .env
 .venv
+.venv*/
 env/
 venv/
 ENV/

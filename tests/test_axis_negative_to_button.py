@@ -28,6 +28,12 @@ class TestAxisNegativeToButton:
         assert f.process(-0.55) is True    # 0.55 > 0.50 → ON維持 (ヒステリシス)
         assert f.process(-0.49) is False   # 0.49 < 0.50 → OFF
 
+    def test_negative_thresholds_are_accepted(self) -> None:
+        """負方向指定では負の閾値も正の閾値と同じ意味で扱うこと."""
+        f = AxisToButtonTransform(on_threshold=-0.65, off_threshold=-0.50, negative=True)
+        assert f.process(-0.7) is True
+        assert f.process(-0.3) is False
+
     def test_negative_direction_ignores_positive(self) -> None:
         """positive=True でも negative=True のとき正方向の入力はOFFのままであること."""
         f = AxisToButtonTransform(on_threshold=0.65, off_threshold=0.50, negative=True)

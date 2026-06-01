@@ -1,4 +1,12 @@
 PySide6>=6.6.0
 pygame-ce>=2.5.7
 PyYAML>=6.0.1
-pyvjoy>=1.0.1  # Windows only: uncomment when using vJoy output
+
+# Optional: Windows vJoy output
+# pyvjoy>=1.0.1
+
+# Optional: exe build
+# pyinstaller>=6
+
+# Optional: tests
+# pytest>=8

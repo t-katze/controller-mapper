@@ -369,6 +369,7 @@ class MainWindow(QMainWindow):
 
         # Mapping
         self._mapping_editor = MappingEditor()
+        self._mapping_editor.set_input_backend(self._input_backend)
         self._mapping_editor.profile_changed.connect(self._on_profile_edited)
         self._tabs.addTab(self._mapping_editor, "🗺 Mapping")
 
@@ -477,6 +478,7 @@ class MainWindow(QMainWindow):
         self._clear_state_queue()
         self._device_panel.refresh(devices)
         self._monitor_panel.setup_devices(devices)
+        self._mapping_editor.set_detected_devices(devices)
 
         max_axes = max((dev.num_axes for dev in devices), default=0)
         self._calib_panel.setup_axes(max_axes)

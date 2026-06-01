@@ -40,10 +40,12 @@ class ModesConfig:
 @dataclass
 class InputConfig:
     device: str = ""
-    type: str = "button"       # "button" | "axis" | "button_pair"
+    type: str = "button"       # "button" | "axis" | "button_pair" | "hat"
     index: int = 0
     negative_index: int | None = None
     positive_index: int | None = None
+    hat_x: int = 0
+    hat_y: int = 1
 
 
 @dataclass
@@ -75,7 +77,7 @@ class TransformConfig:
     positive: dict[str, Any] = field(default_factory=dict)
     # axis_negative_to_button: 軸の-方向で判定
     negative_direction: bool = False
-    # button_split: ON/OFF それぞれ別ボタンに出力
+    # button_split: ON側は output.index、OFF側は off_button に出力
     on_button: int = 0
     off_button: int = 1
 
@@ -85,6 +87,7 @@ class RuleOutputConfig:
     device: str = "vjoy1"
     type: str = "button"           # "button" | "axis"
     index: int = 0
+    positive_index: int | None = None
     name: str = ""                 # 軸名 (x/y/z/rx/ry/rz/slider1/slider2)
 
 

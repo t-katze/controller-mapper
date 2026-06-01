@@ -19,37 +19,57 @@
 
 ## インストール
 
-```bash
-# 依存ライブラリのインストール
-pip install -r requirements.txt
+```powershell
+# 仮想環境の作成例
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
 
 # 開発インストール
-pip install -e .
+.\.venv\Scripts\python.exe -m pip install -e .
+
+# テストやビルドも行う開発環境
+.\.venv\Scripts\python.exe -m pip install -e .[dev]
 ```
+
+`requirements.txt` には通常起動に必要な依存のみを記載しています。
+vJoy出力やexeビルド用の依存は optional dependencies として `pyproject.toml` に定義しています。
 
 ## 起動
 
-```bash
-python -m controller_mapper
+```powershell
+.\.venv\Scripts\python.exe -m controller_mapper
 # または
 controller-mapper
 ```
 
+## exe化（Windows）
+
+```powershell
+# ビルド用依存のインストール込みでexeを作成
+.\scripts\build_exe.ps1 -InstallDeps -Clean
+```
+
+生成物は `dist\controller-mapper\controller-mapper.exe` です。
+`profiles\*.yaml` は配布フォルダ内の `_internal\profiles\` に同梱されます。
+配布するときは `controller-mapper.exe` 単体ではなく、`dist\controller-mapper\` フォルダ一式をコピーしてください。
+
 ## vJoy出力を使う場合（Windows）
 
-1. [vJoy](https://github.com/shauleiz/vJoy) をインストール
-2. `pip install pyvjoy` を実行
-3. `requirements.txt` の `# pyvjoy` 行のコメントアウトを解除
+1. [vJoy](https://github.com/jshafer817/vJoy) をインストール
+2. `.\.venv\Scripts\python.exe -m pip install -e .[vjoy]` を実行
+3. プロファイルの `output.type` を `vjoy` に設定
 
 ## プロファイル
 
 `profiles/` ディレクトリにYAMLファイルを配置します。
-サンプル：`profiles/dcs_f16_x56.yaml`
+サンプル：`profiles/DCS.yaml`
 
 ## ディレクトリ構成
 
 ```
 controller-mapper/
+  packaging/      # PyInstaller spec
+  scripts/        # ビルド補助スクリプト
   src/controller_mapper/
     app/          # GUIパネル
     core/         # パイプライン・状態管理
@@ -64,8 +84,9 @@ controller-mapper/
 
 ## テスト
 
-```bash
-pytest tests/ -v
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e .[test]
+.\.venv\Scripts\python.exe -m pytest
 ```
 
 ## 注意事項

@@ -1,19 +1,6 @@
 profile:
   name: DCS_F16_X56
   version: 1
-devices:
-  x56_stick:
-    match:
-      name_contains: X56
-      role: stick
-  x56_throttle:
-    match:
-      name_contains: X56
-      role: throttle
-  t_rudder:
-    match:
-      name_contains: Rudder
-      role: rudder
 output:
   type: vjoy
   device_id: 1
@@ -30,39 +17,82 @@ rules:
 - name: airbrake
   mode: '*'
   input:
-    device: x56_throttle
-    type: button_pair
+    device: pygame_3
+    type: button
     index: 32
-    negative_index: 0
-    positive_index: 0
   filters:
-    debounce_ms: 200.0
+    debounce_ms: 100.0
   transform:
     type: button_split
-    on_button: 0
     off_button: 1
   output:
     type: button
     index: 0
-- name: wheelbrake
+- name: wheelbrake_R
   mode: '*'
   input:
-    device: t_rudder
+    device: pygame_0
     type: axis
     index: 0
   transform:
-    type: axis_to_button
-    on_threshold: 0.5
-    off_threshold: 0.4
+    type: axis_negative_to_button
+    on_threshold: -0.5
+    off_threshold: -0.5
+    negative_direction: true
   output:
     type: button
     index: 2
 - name: wheelbrake_L
   mode: '*'
   input:
-    device: t_rudder
+    device: pygame_0
     type: axis
     index: 1
+  transform:
+    type: axis_negative_to_button
+    on_threshold: -0.5
+    off_threshold: -0.5
+    negative_direction: true
   output:
     type: button
-    index: 0
+    index: 3
+- name: stick_substick_x
+  mode: '*'
+  input:
+    device: pygame_2
+    type: axis
+    index: 2
+  filters:
+    debounce_ms: 100.0
+  transform:
+    type: axis_to_dual_button
+    negative:
+      on_threshold: -0.8
+      off_threshold: -0.8
+    positive:
+      on_threshold: 0.8
+      off_threshold: 0.8
+  output:
+    type: button
+    index: 4
+    positive_index: 5
+- name: stick_substick_y
+  mode: '*'
+  input:
+    device: pygame_2
+    type: axis
+    index: 3
+  filters:
+    debounce_ms: 100.0
+  transform:
+    type: axis_to_dual_button
+    negative:
+      on_threshold: -0.8
+      off_threshold: -0.8
+    positive:
+      on_threshold: 0.8
+      off_threshold: 0.8
+  output:
+    type: button
+    index: 6
+    positive_index: 7

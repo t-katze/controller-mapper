@@ -9,7 +9,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from controller_mapper.config.loader import load_profile
+from controller_mapper.config.loader import load_profile, save_profile
+from controller_mapper.config.schema import (
+    InputConfig,
+    ProfileConfig,
+    RuleConfig,
+    RuleOutputConfig,
+    TransformConfig,
+)
 from controller_mapper.core.errors import ProfileLoadError, ProfileValidationError
 
 
@@ -137,6 +144,212 @@ class TestProfileLoader:
         assert rule.transform.on_threshold == pytest.approx(0.65)
         assert rule.transform.off_threshold == pytest.approx(0.50)
 
+    def test_transform_button_split_uses_output_index_as_on_button(
+        self, tmp_path: Path
+    ) -> None:
+        """button_split は output.index をON側ボタンとして扱うこと."""
+        data = {
+            "profile": {"name": "split_test", "version": 1},
+            "rules": [
+                {
+                    "name": "split",
+                    "input": {"device": "stick", "type": "button", "index": 0},
+                    "transform": {"type": "button_split", "off_button": 11},
+                    "output": {"type": "button", "index": 10},
+                }
+            ],
+        }
+        path = _write_yaml(tmp_path, data)
+        profile = load_profile(path)
+        rule = profile.rules[0]
+        assert rule.output.index == 10
+        assert rule.transform.on_button == 10
+        assert rule.transform.off_button == 11
+
+    def test_save_button_split_does_not_write_on_button(self, tmp_path: Path) -> None:
+        """button_split のON側ボタンは output.index にだけ保存すること."""
+        profile = ProfileConfig(name="save_split")
+        profile.rules.append(
+            RuleConfig(
+                name="split",
+                input=InputConfig(device="stick", type="button", index=0),
+                transform=TransformConfig(
+                    type="button_split",
+                    on_button=10,
+                    off_button=11,
+                ),
+                output=RuleOutputConfig(type="button", index=10),
+            )
+        )
+        path = tmp_path / "saved.yaml"
+
+        save_profile(profile, path)
+
+        saved = yaml.safe_load(path.read_text(encoding="utf-8"))
+        transform = saved["rules"][0]["transform"]
+        assert "on_button" not in transform
+        assert transform["off_button"] == 11
+        assert saved["rules"][0]["output"]["index"] == 10
+
+    def test_hat_input_direction_is_parsed(self, tmp_path: Path) -> None:
+        """hat 入力は Hat 番号と方向を保持して読み込めること."""
+        data = {
+            "profile": {"name": "hat_test", "version": 1},
+            "rules": [
+                {
+                    "name": "pov_up",
+                    "input": {
+                        "device": "stick",
+                        "type": "hat",
+                        "index": 0,
+                        "hat_x": 0,
+                        "hat_y": 1,
+                    },
+                    "output": {"type": "button", "index": 12},
+                }
+            ],
+        }
+        path = _write_yaml(tmp_path, data)
+        profile = load_profile(path)
+        rule = profile.rules[0]
+
+        assert rule.input.type == "hat"
+        assert rule.input.index == 0
+        assert rule.input.hat_x == 0
+        assert rule.input.hat_y == 1
+
+    def test_save_hat_input_writes_direction(self, tmp_path: Path) -> None:
+        """hat 入力は方向をYAMLへ保存すること."""
+        profile = ProfileConfig(name="save_hat")
+        profile.rules.append(
+            RuleConfig(
+                name="pov_right",
+                input=InputConfig(
+                    device="stick",
+                    type="hat",
+                    index=0,
+                    hat_x=1,
+                    hat_y=0,
+                ),
+                output=RuleOutputConfig(type="button", index=12),
+            )
+        )
+        path = tmp_path / "saved_hat.yaml"
+
+        save_profile(profile, path)
+
+        saved = yaml.safe_load(path.read_text(encoding="utf-8"))
+        inp = saved["rules"][0]["input"]
+        assert inp["type"] == "hat"
+        assert inp["hat_x"] == 1
+        assert inp["hat_y"] == 0
+
+    def test_transform_axis_to_dual_uses_output_indices(
+        self, tmp_path: Path
+    ) -> None:
+        """axis_to_dual_button は出力欄で2つのボタンを指定できること."""
+        data = {
+            "profile": {"name": "dual_test", "version": 1},
+            "rules": [
+                {
+                    "name": "dual",
+                    "input": {"device": "stick", "type": "axis", "index": 0},
+                    "transform": {
+                        "type": "axis_to_dual_button",
+                        "negative": {
+                            "on_threshold": -0.6,
+                            "off_threshold": -0.45,
+                        },
+                        "positive": {
+                            "on_threshold": 0.6,
+                            "off_threshold": 0.45,
+                        },
+                    },
+                    "output": {
+                        "type": "button",
+                        "index": 21,
+                        "positive_index": 22,
+                    },
+                }
+            ],
+        }
+        path = _write_yaml(tmp_path, data)
+        profile = load_profile(path)
+        rule = profile.rules[0]
+        assert rule.output.index == 21
+        assert rule.output.positive_index == 22
+        assert "output_button" not in rule.transform.negative
+        assert "output_button" not in rule.transform.positive
+
+    def test_transform_axis_to_dual_migrates_legacy_output_buttons(
+        self, tmp_path: Path
+    ) -> None:
+        """旧形式の output_button 指定を出力欄のインデックスへ移行すること."""
+        data = {
+            "profile": {"name": "legacy_dual_test", "version": 1},
+            "rules": [
+                {
+                    "name": "dual",
+                    "input": {"device": "stick", "type": "axis", "index": 0},
+                    "transform": {
+                        "type": "axis_to_dual_button",
+                        "negative": {
+                            "output_button": 31,
+                            "on_threshold": -0.6,
+                            "off_threshold": -0.45,
+                        },
+                        "positive": {
+                            "output_button": 32,
+                            "on_threshold": 0.6,
+                            "off_threshold": 0.45,
+                        },
+                    },
+                    "output": {"type": "button", "index": 0},
+                }
+            ],
+        }
+        path = _write_yaml(tmp_path, data)
+        profile = load_profile(path)
+        rule = profile.rules[0]
+        assert rule.output.index == 31
+        assert rule.output.positive_index == 32
+
+    def test_save_axis_to_dual_writes_output_indices(
+        self, tmp_path: Path
+    ) -> None:
+        """axis_to_dual_button の出力ボタンは output にだけ保存すること."""
+        profile = ProfileConfig(name="save_dual")
+        profile.rules.append(
+            RuleConfig(
+                name="dual",
+                input=InputConfig(device="stick", type="axis", index=0),
+                transform=TransformConfig(
+                    type="axis_to_dual_button",
+                    negative={
+                        "output_button": 21,
+                        "on_threshold": -0.6,
+                        "off_threshold": -0.45,
+                    },
+                    positive={
+                        "output_button": 22,
+                        "on_threshold": 0.6,
+                        "off_threshold": 0.45,
+                    },
+                ),
+                output=RuleOutputConfig(type="button", index=21, positive_index=22),
+            )
+        )
+        path = tmp_path / "saved_dual.yaml"
+
+        save_profile(profile, path)
+
+        saved = yaml.safe_load(path.read_text(encoding="utf-8"))
+        rule = saved["rules"][0]
+        assert rule["output"]["index"] == 21
+        assert rule["output"]["positive_index"] == 22
+        assert "output_button" not in rule["transform"]["negative"]
+        assert "output_button" not in rule["transform"]["positive"]
+
 
 class TestProfileLoaderErrors:
     """読み込みエラーのテスト."""
@@ -157,8 +370,8 @@ class TestProfileLoaderErrors:
 class TestProfileValidation:
     """バリデーションのテスト."""
 
-    def test_empty_rule_name_raises(self, tmp_path: Path) -> None:
-        """ルール名が空のとき ProfileValidationError が発生すること."""
+    def test_empty_rule_name_loads(self, tmp_path: Path) -> None:
+        """ルール名が空でもプロファイルを読み込めること."""
         data = {
             "profile": {"name": "val_test", "version": 1},
             "rules": [
@@ -170,11 +383,11 @@ class TestProfileValidation:
             ],
         }
         path = _write_yaml(tmp_path, data)
-        with pytest.raises(ProfileValidationError):
-            load_profile(path)
+        profile = load_profile(path)
+        assert profile.rules[0].name == ""
 
-    def test_empty_input_device_raises(self, tmp_path: Path) -> None:
-        """input.device が空のとき ProfileValidationError が発生すること."""
+    def test_empty_input_device_loads(self, tmp_path: Path) -> None:
+        """input.device が空でもプロファイルを読み込めること."""
         data = {
             "profile": {"name": "val_test2", "version": 1},
             "rules": [
@@ -186,8 +399,8 @@ class TestProfileValidation:
             ],
         }
         path = _write_yaml(tmp_path, data)
-        with pytest.raises(ProfileValidationError):
-            load_profile(path)
+        profile = load_profile(path)
+        assert profile.rules[0].input.device == ""
 
     def test_negative_debounce_raises(self, tmp_path: Path) -> None:
         """debounce_ms < 0 のとき ProfileValidationError が発生すること."""

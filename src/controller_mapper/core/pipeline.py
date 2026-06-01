@@ -38,7 +38,14 @@ class RuleProcessor:
         f = r.filters
         t = r.transform
 
-        if r.input.type == "axis" and r.output.type == "axis":
+        if r.output.type == "button" and t.type == "button_split":
+            # button_split: input.index のON/OFFを2つの仮想ボタンへ常時反映する
+            self._transform = ButtonSplitTransform(
+                on_button=r.output.index,
+                off_button=t.off_button,
+                debounce_ms=f.debounce_ms,
+            )
+        elif r.input.type == "axis" and r.output.type == "axis":
             # smoothing: alpha=1.0 でEWMA無効
             alpha = 1.0 - f.smoothing if f.smoothing > 0 else 1.0
             self._transform = AxisToAxisTransform(
@@ -70,7 +77,7 @@ class RuleProcessor:
                     off_threshold=t.off_threshold,
                     negative=is_negative,
                 )
-        elif r.input.type == "button" and r.output.type == "axis":
+        elif r.input.type in ("button", "hat") and r.output.type == "axis":
             self._transform = ButtonToAxisTransform(
                 released_value=t.released_value,
                 pressed_value=t.pressed_value,
@@ -81,13 +88,6 @@ class RuleProcessor:
                 speed_per_sec=t.speed_per_sec,
                 return_to_center=t.return_to_center,
             )
-        elif r.input.type == "button" and r.output.type == "button" and t.type == "button_split":
-            # button_split: ON/OFF を2つの仮想ボタンに分割
-            self._transform = ButtonSplitTransform(
-                on_button=t.on_button,
-                off_button=t.off_button,
-                debounce_ms=f.debounce_ms,
-            )
         else:
             # button → button (通常)
             self._transform = ButtonToButtonTransform(
@@ -96,6 +96,13 @@ class RuleProcessor:
                 minimum_off_ms=f.minimum_off_ms,
                 toggle=f.toggle,
             )
+
+    def _read_boolean_input(self, device_state: DeviceState) -> bool:
+        """button / hat 系入力を bool として読む."""
+        inp = self.rule.input
+        if inp.type == "hat":
+            return device_state.hats.get(inp.index, (0, 0)) == (inp.hat_x, inp.hat_y)
+        return device_state.buttons.get(inp.index, False)
 
     def process(
         self,
@@ -120,7 +127,16 @@ class RuleProcessor:
         inp_type = r.input.type
         out_type = r.output.type
 
-        if inp_type == "axis" and out_type == "axis":
+        if out_type == "button" and isinstance(self._transform, ButtonSplitTransform):
+            # button_split: ON/OFF を2つの仮想ボタンに分割
+            raw_val = self._read_boolean_input(device_state)
+            on_result, off_result = self._transform.process(raw_val, now)
+            output.buttons[self._transform.on_button] = on_result
+            output.buttons[self._transform.off_button] = off_result
+            if flt_dev is not None:
+                flt_dev.buttons[r.input.index] = on_result
+
+        elif inp_type == "axis" and out_type == "axis":
             raw_val = device_state.axes.get(r.input.index, 0.0)
             result = self._transform.process(raw_val)
             out_name = r.output.name or "x"
@@ -133,16 +149,20 @@ class RuleProcessor:
             raw_val = device_state.axes.get(r.input.index, 0.0)
             if isinstance(self._transform, AxisToDualButtonTransform):
                 neg_btn, pos_btn = self._transform.process(raw_val)
-                neg_idx = self.rule.transform.negative.get("output_button", r.output.index)
-                pos_idx = self.rule.transform.positive.get("output_button", r.output.index + 1)
+                neg_idx = r.output.index
+                pos_idx = (
+                    r.output.positive_index
+                    if r.output.positive_index is not None
+                    else r.output.index + 1
+                )
                 output.buttons[int(neg_idx)] = neg_btn
                 output.buttons[int(pos_idx)] = pos_btn
             else:
                 result = self._transform.process(raw_val)
                 output.buttons[r.output.index] = result
 
-        elif inp_type == "button" and out_type == "axis":
-            raw_val = device_state.buttons.get(r.input.index, False)
+        elif inp_type in ("button", "hat") and out_type == "axis":
+            raw_val = self._read_boolean_input(device_state)
             result = self._transform.process(raw_val)
             out_name = r.output.name or "x"
             output.axes[out_name] = result
@@ -156,18 +176,9 @@ class RuleProcessor:
             out_name = r.output.name or "x"
             output.axes[out_name] = result
 
-        elif inp_type == "button" and out_type == "button" and isinstance(self._transform, ButtonSplitTransform):
-            # button_split: ON/OFF を2つの仮想ボタンに分割
-            raw_val = device_state.buttons.get(r.input.index, False)
-            on_result, off_result = self._transform.process(raw_val, now)
-            output.buttons[self._transform.on_button] = on_result
-            output.buttons[self._transform.off_button] = off_result
-            if flt_dev is not None:
-                flt_dev.buttons[r.input.index] = on_result
-
         else:
             # button → button (通常)
-            raw_val = device_state.buttons.get(r.input.index, False)
+            raw_val = self._read_boolean_input(device_state)
             result = self._transform.process(raw_val, now)
             output.buttons[r.output.index] = result
             # FilteredState にデバウンス結果を反映
