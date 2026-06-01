@@ -10,6 +10,10 @@ devices:
     match:
       name_contains: X56
       role: throttle
+  t_rudder:
+    match:
+      name_contains: Rudder
+      role: rudder
 output:
   type: vjoy
   device_id: 1
@@ -43,7 +47,20 @@ rules:
 - name: wheelbrake
   mode: '*'
   input:
-    device: x56_stick
+    device: t_rudder
+    type: axis
+    index: 0
+  transform:
+    type: axis_to_button
+    on_threshold: 0.5
+    off_threshold: 0.4
+  output:
+    type: button
+    index: 2
+- name: wheelbrake_L
+  mode: '*'
+  input:
+    device: t_rudder
     type: axis
     index: 1
   output:

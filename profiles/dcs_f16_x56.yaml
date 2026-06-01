@@ -10,6 +10,10 @@ devices:
     match:
       name_contains: X56
       role: throttle
+  t_rudder:
+    match:
+      name_contains: Rudder
+      role: rudder
 output:
   type: vjoy
   device_id: 1
@@ -51,9 +55,9 @@ rules:
 - name: yaw_pedals
   mode: '*'
   input:
-    device: x56_stick
+    device: t_rudder
     type: axis
-    index: 2
+    index: 0
   filters:
     deadzone: 0.05
     curve: 1.2
