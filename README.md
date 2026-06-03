@@ -53,7 +53,6 @@ controller-mapper
 
 生成物は `dist\controller-mapper\controller-mapper.exe` です。
 `profiles\*.yaml` は配布フォルダ内の `_internal\profiles\` に同梱されます。
-配布するときは `controller-mapper.exe` 単体ではなく、`dist\controller-mapper\` フォルダ一式をコピーしてください。
 
 ## vJoy出力を使う場合（Windows）
 
