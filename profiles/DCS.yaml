@@ -96,3 +96,57 @@ rules:
     type: button
     index: 6
     positive_index: 7
+- name: hight_G_fwd_1
+  mode: '*'
+  input:
+    device: pygame_2
+    type: axis
+    index: 1
+  transform:
+    type: axis_to_button
+    on_threshold: 0.99
+    off_threshold: 0.99
+  output:
+    type: button
+    index: 9
+- name: hight_G_fwd_2
+  mode: '*'
+  input:
+    device: pygame_2
+    type: axis
+    index: 1
+  transform:
+    type: axis_to_button
+    on_threshold: 0.99
+    off_threshold: 0.99
+  output:
+    type: button
+    index: 10
+- name: hight_G_aft_1
+  mode: '*'
+  input:
+    device: pygame_2
+    type: axis
+    index: 1
+  transform:
+    type: axis_negative_to_button
+    on_threshold: -0.99
+    off_threshold: -0.99
+    negative_direction: true
+  output:
+    type: button
+    index: 9
+- name: hight_G_aft_2
+  mode: '*'
+  input:
+    device: pygame_2
+    type: axis
+    index: 1
+  transform:
+    type: axis_negative_to_button
+    on_threshold: -0.99
+    off_threshold: -0.99
+    negative_direction: true
+  output:
+    type: button
+    index: 10

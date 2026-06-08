@@ -25,6 +25,12 @@ from controller_mapper.transforms.mode_switch import ModeManager
 logger = logging.getLogger(__name__)
 
 
+def _write_button_output(output: OutputState, index: int, pressed: bool) -> None:
+    """同じ出力ボタンへ複数ルールが書く場合はOR合成する."""
+    idx = int(index)
+    output.buttons[idx] = output.buttons.get(idx, False) or bool(pressed)
+
+
 class RuleProcessor:
     """単一ルールの変換処理を保持するクラス."""
 
@@ -131,8 +137,8 @@ class RuleProcessor:
             # button_split: ON/OFF を2つの仮想ボタンに分割
             raw_val = self._read_boolean_input(device_state)
             on_result, off_result = self._transform.process(raw_val, now)
-            output.buttons[self._transform.on_button] = on_result
-            output.buttons[self._transform.off_button] = off_result
+            _write_button_output(output, self._transform.on_button, on_result)
+            _write_button_output(output, self._transform.off_button, off_result)
             if flt_dev is not None:
                 flt_dev.buttons[r.input.index] = on_result
 
@@ -155,11 +161,11 @@ class RuleProcessor:
                     if r.output.positive_index is not None
                     else r.output.index + 1
                 )
-                output.buttons[int(neg_idx)] = neg_btn
-                output.buttons[int(pos_idx)] = pos_btn
+                _write_button_output(output, neg_idx, neg_btn)
+                _write_button_output(output, pos_idx, pos_btn)
             else:
                 result = self._transform.process(raw_val)
-                output.buttons[r.output.index] = result
+                _write_button_output(output, r.output.index, result)
 
         elif inp_type in ("button", "hat") and out_type == "axis":
             raw_val = self._read_boolean_input(device_state)
@@ -180,7 +186,7 @@ class RuleProcessor:
             # button → button (通常)
             raw_val = self._read_boolean_input(device_state)
             result = self._transform.process(raw_val, now)
-            output.buttons[r.output.index] = result
+            _write_button_output(output, r.output.index, result)
             # FilteredState にデバウンス結果を反映
             if flt_dev is not None:
                 flt_dev.buttons[r.input.index] = result
