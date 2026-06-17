@@ -1,5 +1,5 @@
 profile:
-  name: DCS_F16_X56
+  name: DCS
   version: 1
 output:
   type: vjoy
@@ -22,9 +22,6 @@ rules:
     index: 32
   filters:
     debounce_ms: 100.0
-  transform:
-    type: button_split
-    off_button: 1
   output:
     type: button
     index: 0
@@ -96,57 +93,17 @@ rules:
     type: button
     index: 6
     positive_index: 7
-- name: hight_G_fwd_1
+- name: airbrake2
   mode: '*'
   input:
-    device: pygame_2
-    type: axis
-    index: 1
+    device: pygame_3
+    type: button
+    index: 32
+  filters:
+    debounce_ms: 50.0
   transform:
-    type: axis_to_button
-    on_threshold: 0.99
-    off_threshold: 0.99
+    type: button_split
+    off_button: 1
   output:
     type: button
-    index: 9
-- name: hight_G_fwd_2
-  mode: '*'
-  input:
-    device: pygame_2
-    type: axis
-    index: 1
-  transform:
-    type: axis_to_button
-    on_threshold: 0.99
-    off_threshold: 0.99
-  output:
-    type: button
-    index: 10
-- name: hight_G_aft_1
-  mode: '*'
-  input:
-    device: pygame_2
-    type: axis
-    index: 1
-  transform:
-    type: axis_negative_to_button
-    on_threshold: -0.99
-    off_threshold: -0.99
-    negative_direction: true
-  output:
-    type: button
-    index: 9
-- name: hight_G_aft_2
-  mode: '*'
-  input:
-    device: pygame_2
-    type: axis
-    index: 1
-  transform:
-    type: axis_negative_to_button
-    on_threshold: -0.99
-    off_threshold: -0.99
-    negative_direction: true
-  output:
-    type: button
-    index: 10
+    index: 8

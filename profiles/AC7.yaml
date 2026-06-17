@@ -1,0 +1,147 @@
+profile:
+  name: AC7
+  version: 1
+output:
+  type: vjoy
+  device_id: 1
+global:
+  update_rate_hz: 500
+  gui_rate_hz: 30
+modes:
+  default: nav
+  definitions:
+  - nav
+  - aa
+  - ag
+rules:
+- name: high_G_fwd_1
+  mode: '*'
+  input:
+    device: pygame_2
+    type: axis
+    index: 1
+  transform:
+    type: axis_to_button
+    on_threshold: 0.99
+    off_threshold: 0.99
+  output:
+    type: button
+    index: 0
+- name: high_G_G_fwd_2
+  mode: '*'
+  input:
+    device: pygame_2
+    type: axis
+    index: 1
+  transform:
+    type: axis_to_button
+    on_threshold: 0.99
+    off_threshold: 0.99
+  output:
+    type: button
+    index: 1
+- name: high_G_aft_1
+  mode: '*'
+  input:
+    device: pygame_2
+    type: axis
+    index: 1
+  transform:
+    type: axis_negative_to_button
+    on_threshold: -0.99
+    off_threshold: -0.99
+    negative_direction: true
+  output:
+    type: button
+    index: 0
+- name: high_G_aft_2
+  mode: '*'
+  input:
+    device: pygame_2
+    type: axis
+    index: 1
+  transform:
+    type: axis_negative_to_button
+    on_threshold: -0.99
+    off_threshold: -0.99
+    negative_direction: true
+  output:
+    type: button
+    index: 1
+- name: Throttle
+  mode: '*'
+  input:
+    device: pygame_3
+    type: axis
+    index: 0
+  transform:
+    type: axis_to_dual_button
+    negative:
+      on_threshold: -0.3
+      off_threshold: -0.3
+    positive:
+      on_threshold: 0.3
+      off_threshold: 0.3
+  output:
+    type: button
+    index: 0
+    positive_index: 1
+- name: chaff,flare_1
+  mode: '*'
+  input:
+    device: pygame_2
+    type: axis
+    index: 2
+  filters:
+    debounce_ms: 50.0
+  transform:
+    type: axis_negative_to_button
+    on_threshold: -0.5
+    off_threshold: -0.5
+    negative_direction: true
+  output:
+    type: button
+    index: 2
+- name: chaff,flare_2
+  mode: '*'
+  input:
+    device: pygame_2
+    type: axis
+    index: 2
+  filters:
+    debounce_ms: 50.0
+  transform:
+    type: axis_negative_to_button
+    on_threshold: -0.5
+    off_threshold: -0.5
+    negative_direction: true
+  output:
+    type: button
+    index: 3
+- name: ViewChange
+  mode: '*'
+  input:
+    device: pygame_3
+    type: button
+    index: 9
+  output:
+    type: button
+    index: 3
+- name: high_G
+  mode: '*'
+  input:
+    device: pygame_3
+    type: button
+    index: 2
+  output:
+    type: button
+    index: 0
+- name: high_G_2
+  mode: '*'
+  input:
+    device: pygame_3
+    type: button
+    index: 2
+  output:
+    type: button
+    index: 1

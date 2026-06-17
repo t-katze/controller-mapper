@@ -47,6 +47,20 @@ vJoy出力をソース実行で使う場合:
 controller-mapper
 ```
 
+`controller-mapper` で次のようなエラーが出る場合は、仮想環境内のコマンドランチャーが古いPythonパスを参照しています。
+
+```text
+Fatal error in launcher: Unable to create process using ...
+```
+
+プロジェクトフォルダや `.venv` を移動、コピー、リネームしたあとに起きます。現在の仮想環境で再インストールしてください。
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e .
+```
+
+それでも直らない場合は、`.venv` を作り直してから再度インストールしてください。
+
 ## プロファイル
 
 プロファイルは `profiles/` ディレクトリにYAMLファイルとして置きます。
