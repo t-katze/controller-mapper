@@ -1,6 +1,6 @@
 [project]
 name = "controller-mapper"
-version = "0.1.0"
+version = "0.1.2"
 description = "Flight stick input correction and virtual controller output app"
 requires-python = ">=3.11"
 dependencies = [

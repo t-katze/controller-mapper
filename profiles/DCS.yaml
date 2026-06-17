@@ -14,17 +14,6 @@ modes:
   - aa
   - ag
 rules:
-- name: airbrake
-  mode: '*'
-  input:
-    device: pygame_3
-    type: button
-    index: 32
-  filters:
-    debounce_ms: 100.0
-  output:
-    type: button
-    index: 0
 - name: wheelbrake_R
   mode: '*'
   input:
@@ -104,6 +93,7 @@ rules:
   transform:
     type: button_split
     off_button: 1
+    gap_ms: 100.0
   output:
     type: button
-    index: 8
+    index: 0

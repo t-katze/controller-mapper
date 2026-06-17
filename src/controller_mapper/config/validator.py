@@ -35,6 +35,10 @@ def _validate_rule(index: int, rule: RuleConfig) -> None:
         raise ProfileValidationError(f"rules[{index}] ({rule.name}): curve は正の値で指定してください")
 
     transform = rule.transform
+    if transform.gap_ms < 0:
+        raise ProfileValidationError(
+            f"rules[{index}] ({rule.name}): gap_ms < 0"
+        )
     if transform.type in ("axis_to_button", "axis_to_dual_button"):
         if transform.on_threshold <= transform.off_threshold:
             logger.warning(

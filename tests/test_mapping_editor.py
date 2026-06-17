@@ -75,6 +75,10 @@ def test_button_split_forces_only_button_output() -> None:
     assert _forced_io_types_for_transform("button_split") == (None, "button")
 
 
+def test_button_off_forces_only_button_output() -> None:
+    assert _forced_io_types_for_transform("button_off") == (None, "button")
+
+
 def test_newly_pressed_button_returns_first_new_button() -> None:
     detected = _newly_pressed_button(
         {"pygame_0": {1}, "pygame_1": {2}},

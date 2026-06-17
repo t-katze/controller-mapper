@@ -2,7 +2,7 @@
 
 フライトスティック、スロットル、ラダーペダルなどの入力を読み取り、補正・変換して仮想コントローラへ出力するWindows向けGUIアプリです。
 
-このREADMEは、Releaseとして配布している `dist\controller-mapper-v0.1.0-win-x64.zip` を使う人向けです。ソースコードから起動・開発・ビルドする手順は [docs/source.md](docs/source.md) を参照してください。
+このREADMEは、Releaseとして配布している `dist\controller-mapper-v0.1.2-win-x64.zip` を使う人向けです。ソースコードから起動・開発・ビルドする手順は [docs/source.md](docs/source.md) を参照してください。
 
 ## できること
 
@@ -13,6 +13,8 @@
 - ボタンを軸に変換する
 - 2ボタンを1つの軸操作として扱う
 - ボタンのON/OFFを別々のvJoyボタンへ分ける
+- ボタン分割の切替時、両方OFFになる時間を指定する
+- ボタンが押されていない間だけvJoyボタンを押す
 - プロファイルを読み込み、GUI上でマッピングを追加・編集・保存する
 - `nav` / `aa` / `ag` などのモード別マッピングを切り替える
 - 入力状態、フィルタ後の値、仮想デバイスへの出力状態をリアルタイム表示する
@@ -22,7 +24,7 @@
 ## 必要なもの
 
 - Windows 10/11
-- Release zip: `controller-mapper-v0.1.0-win-x64.zip`
+- Release zip: `controller-mapper-v0.1.2-win-x64.zip`
 - vJoyドライバ
 - 使用するジョイスティック、HOTAS、ペダルなど
 
@@ -45,7 +47,7 @@ vJoyが初期化できない場合、アプリは警告を表示して `NullBack
 
 ## インストールと起動
 
-1. Releaseから `controller-mapper-v0.1.0-win-x64.zip` をダウンロードします。
+1. Releaseから `controller-mapper-v0.1.2-win-x64.zip` をダウンロードします。
 2. zipを任意のフォルダへ展開します。
 3. 展開したフォルダ内の `controller-mapper\controller-mapper.exe` を起動します。
 
@@ -187,7 +189,8 @@ controller-mapper\_internal\profiles\DCS.yaml
 - `軸→2ボタン (正負)`: 軸のマイナス方向とプラス方向を別ボタンへ出力
 - `ボタン→軸`: ボタンのON/OFFを軸値へ変換
 - `2ボタン→軸`: 2つのボタンで1つの軸を操作
-- `ボタン分割`: ボタンONとOFFを別々のボタンとして出力
+- `ボタン分割`: ボタンONとOFFを別々のボタンとして出力。同時OFF時間を指定すると、切替時に2つの出力ボタンを指定msだけ同時OFFにする
+- `ボタンOFF→ボタン`: ボタンが押されていない間だけボタンONを出力
 
 一部の入力インデックスには `検出` ボタンがあります。押したあとに実機のボタンや軸を操作すると、その入力番号を拾えます。
 
@@ -253,9 +256,22 @@ rules:
     transform:
       type: button_split
       off_button: 1
+      gap_ms: 50
     output:
       type: button
       index: 0
+
+  - name: example_off_only
+    mode: "*"
+    input:
+      device: pygame_0
+      type: button
+      index: 1
+    transform:
+      type: button_off
+    output:
+      type: button
+      index: 2
 ```
 
 よく編集する場所は `rules` です。GUIの `Mapping` タブから編集して保存できます。

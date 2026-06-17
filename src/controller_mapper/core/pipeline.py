@@ -19,7 +19,11 @@ from controller_mapper.filters.smoothing import EwmaFilter
 from controller_mapper.transforms.axis_to_axis import AxisToAxisTransform
 from controller_mapper.transforms.axis_to_button import AxisToButtonTransform, AxisToDualButtonTransform
 from controller_mapper.transforms.button_to_axis import ButtonToAxisTransform, ButtonPairToAxisTransform
-from controller_mapper.transforms.button_to_button import ButtonSplitTransform, ButtonToButtonTransform
+from controller_mapper.transforms.button_to_button import (
+    ButtonOffTransform,
+    ButtonSplitTransform,
+    ButtonToButtonTransform,
+)
 from controller_mapper.transforms.mode_switch import ModeManager
 
 logger = logging.getLogger(__name__)
@@ -49,6 +53,12 @@ class RuleProcessor:
             self._transform = ButtonSplitTransform(
                 on_button=r.output.index,
                 off_button=t.off_button,
+                debounce_ms=f.debounce_ms,
+                gap_ms=t.gap_ms,
+            )
+        elif r.output.type == "button" and t.type == "button_off":
+            # button_off: input.index がOFFのときだけ output.index を押す
+            self._transform = ButtonOffTransform(
                 debounce_ms=f.debounce_ms,
             )
         elif r.input.type == "axis" and r.output.type == "axis":
@@ -140,7 +150,15 @@ class RuleProcessor:
             _write_button_output(output, self._transform.on_button, on_result)
             _write_button_output(output, self._transform.off_button, off_result)
             if flt_dev is not None:
-                flt_dev.buttons[r.input.index] = on_result
+                flt_dev.buttons[r.input.index] = self._transform.filtered
+
+        elif out_type == "button" and isinstance(self._transform, ButtonOffTransform):
+            # button_off: 入力OFFを単一の仮想ボタンONとして出力
+            raw_val = self._read_boolean_input(device_state)
+            result = self._transform.process(raw_val, now)
+            _write_button_output(output, r.output.index, result)
+            if flt_dev is not None:
+                flt_dev.buttons[r.input.index] = not result
 
         elif inp_type == "axis" and out_type == "axis":
             raw_val = device_state.axes.get(r.input.index, 0.0)

@@ -3,8 +3,7 @@
 ボタンのON/OFFを2つの仮想ボタンに分割する.
 使用例: ギアスイッチ → ギアUPボタン + ギアDOWNボタン
 """
-import pytest
-from controller_mapper.transforms.button_to_button import ButtonSplitTransform
+from controller_mapper.transforms.button_to_button import ButtonOffTransform, ButtonSplitTransform
 
 
 class TestButtonSplitTransform:
@@ -68,3 +67,50 @@ class TestButtonSplitTransform:
         on_r, off_r = f.process(False)
         assert on_r is False
         assert off_r is True
+
+    def test_gap_keeps_both_outputs_off_when_switching_to_on(self) -> None:
+        """OFF→ON切替時、指定時間だけ両出力ボタンがOFFになること."""
+        f = ButtonSplitTransform(on_button=0, off_button=1, gap_ms=50.0)
+
+        assert f.process(False, now=0.0) == (False, True)
+        assert f.process(True, now=0.100) == (False, False)
+        assert f.filtered is True
+        assert f.process(True, now=0.149) == (False, False)
+        assert f.process(True, now=0.151) == (True, False)
+
+    def test_gap_keeps_both_outputs_off_when_switching_to_off(self) -> None:
+        """ON→OFF切替時、指定時間だけ両出力ボタンがOFFになること."""
+        f = ButtonSplitTransform(on_button=0, off_button=1, gap_ms=50.0)
+
+        assert f.process(True, now=0.0) == (True, False)
+        assert f.process(False, now=0.100) == (False, False)
+        assert f.filtered is False
+        assert f.process(False, now=0.149) == (False, False)
+        assert f.process(False, now=0.151) == (False, True)
+
+
+class TestButtonOffTransform:
+    """ButtonOffTransform の単体テスト."""
+
+    def test_button_on_releases_output(self) -> None:
+        """物理ボタンONのとき出力ボタンがOFFになること."""
+        f = ButtonOffTransform()
+        assert f.process(True) is False
+
+    def test_button_off_presses_output(self) -> None:
+        """物理ボタンOFFのとき出力ボタンがONになること."""
+        f = ButtonOffTransform()
+        assert f.process(False) is True
+
+    def test_with_debounce(self) -> None:
+        """デバウンス付きでもOFF専用出力が正しく動作すること."""
+        f = ButtonOffTransform(debounce_ms=30.0)
+        t = 0.0
+
+        assert f.process(False, now=t) is True
+
+        t += 0.005
+        assert f.process(True, now=t) is True
+
+        t += 0.050
+        assert f.process(True, now=t) is False

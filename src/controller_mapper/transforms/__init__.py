@@ -11,7 +11,11 @@ from controller_mapper.transforms.button_to_axis import (
     ButtonPairToAxisTransform,
     ButtonToAxisTransform,
 )
-from controller_mapper.transforms.button_to_button import ButtonSplitTransform, ButtonToButtonTransform
+from controller_mapper.transforms.button_to_button import (
+    ButtonOffTransform,
+    ButtonSplitTransform,
+    ButtonToButtonTransform,
+)
 from controller_mapper.transforms.mode_switch import ModeManager
 
 __all__ = [
@@ -19,6 +23,7 @@ __all__ = [
     "AxisToButtonTransform",
     "AxisToDualButtonTransform",
     "ButtonPairToAxisTransform",
+    "ButtonOffTransform",
     "ButtonSplitTransform",
     "ButtonToAxisTransform",
     "ButtonToButtonTransform",

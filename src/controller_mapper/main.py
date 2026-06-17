@@ -28,7 +28,7 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("Controller Mapper")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion("0.1.2")
 
     # SDL_VIDEODRIVER を戻す (pygame がjoystickを読む際に dummy は不要)
     # joystickはdisplayと独立して初期化できる

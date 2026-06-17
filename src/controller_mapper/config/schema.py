@@ -65,7 +65,8 @@ class FiltersConfig:
 class TransformConfig:
     type: str = ""                  # "axis_to_button" | "axis_to_dual_button" |
                                     # "button_to_axis" | "buttons_to_axis" |
-                                    # "axis_negative_to_button" | "button_split"
+                                    # "axis_negative_to_button" | "button_split" |
+                                    # "button_off"
     on_threshold: float = 0.5
     off_threshold: float = 0.4
     released_value: float = 0.0
@@ -78,8 +79,10 @@ class TransformConfig:
     # axis_negative_to_button: 軸の-方向で判定
     negative_direction: bool = False
     # button_split: ON側は output.index、OFF側は off_button に出力
+    # button_off: OFF側は output.index に出力
     on_button: int = 0
     off_button: int = 1
+    gap_ms: float = 0.0
 
 
 @dataclass

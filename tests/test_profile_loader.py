@@ -154,7 +154,11 @@ class TestProfileLoader:
                 {
                     "name": "split",
                     "input": {"device": "stick", "type": "button", "index": 0},
-                    "transform": {"type": "button_split", "off_button": 11},
+                    "transform": {
+                        "type": "button_split",
+                        "off_button": 11,
+                        "gap_ms": 75,
+                    },
                     "output": {"type": "button", "index": 10},
                 }
             ],
@@ -165,6 +169,7 @@ class TestProfileLoader:
         assert rule.output.index == 10
         assert rule.transform.on_button == 10
         assert rule.transform.off_button == 11
+        assert rule.transform.gap_ms == pytest.approx(75)
 
     def test_save_button_split_does_not_write_on_button(self, tmp_path: Path) -> None:
         """button_split のON側ボタンは output.index にだけ保存すること."""
@@ -177,6 +182,7 @@ class TestProfileLoader:
                     type="button_split",
                     on_button=10,
                     off_button=11,
+                    gap_ms=25,
                 ),
                 output=RuleOutputConfig(type="button", index=10),
             )
@@ -189,7 +195,47 @@ class TestProfileLoader:
         transform = saved["rules"][0]["transform"]
         assert "on_button" not in transform
         assert transform["off_button"] == 11
+        assert transform["gap_ms"] == 25
         assert saved["rules"][0]["output"]["index"] == 10
+
+    def test_transform_button_off_uses_output_index(self, tmp_path: Path) -> None:
+        """button_off は output.index をOFF側ボタンとして扱うこと."""
+        data = {
+            "profile": {"name": "button_off_test", "version": 1},
+            "rules": [
+                {
+                    "name": "off_only",
+                    "input": {"device": "stick", "type": "button", "index": 0},
+                    "transform": {"type": "button_off"},
+                    "output": {"type": "button", "index": 12},
+                }
+            ],
+        }
+        path = _write_yaml(tmp_path, data)
+        profile = load_profile(path)
+        rule = profile.rules[0]
+        assert rule.transform.type == "button_off"
+        assert rule.output.index == 12
+
+    def test_save_button_off_writes_only_type(self, tmp_path: Path) -> None:
+        """button_off は追加パラメータなしで保存すること."""
+        profile = ProfileConfig(name="save_button_off")
+        profile.rules.append(
+            RuleConfig(
+                name="off_only",
+                input=InputConfig(device="stick", type="button", index=0),
+                transform=TransformConfig(type="button_off"),
+                output=RuleOutputConfig(type="button", index=12),
+            )
+        )
+        path = tmp_path / "saved_button_off.yaml"
+
+        save_profile(profile, path)
+
+        saved = yaml.safe_load(path.read_text(encoding="utf-8"))
+        rule = saved["rules"][0]
+        assert rule["transform"] == {"type": "button_off"}
+        assert rule["output"]["index"] == 12
 
     def test_hat_input_direction_is_parsed(self, tmp_path: Path) -> None:
         """hat 入力は Hat 番号と方向を保持して読み込めること."""
@@ -412,6 +458,27 @@ class TestProfileValidation:
                     "input": {"device": "stick", "type": "button", "index": 0},
                     "filters": {"debounce_ms": -10},
                     "output": {"type": "button", "index": 1},
+                }
+            ],
+        }
+        path = _write_yaml(tmp_path, data)
+        with pytest.raises(ProfileValidationError):
+            load_profile(path)
+
+    def test_negative_gap_raises(self, tmp_path: Path) -> None:
+        """gap_ms < 0 のとき ProfileValidationError が発生すること."""
+        data = {
+            "profile": {"name": "val_test4", "version": 1},
+            "rules": [
+                {
+                    "name": "bad_delay",
+                    "input": {"device": "stick", "type": "button", "index": 0},
+                    "transform": {
+                        "type": "button_split",
+                        "off_button": 1,
+                        "gap_ms": -1,
+                    },
+                    "output": {"type": "button", "index": 0},
                 }
             ],
         }

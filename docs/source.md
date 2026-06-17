@@ -99,7 +99,7 @@ dist\controller-mapper\controller-mapper.exe
 Release zipを作る場合は、`dist\controller-mapper\` フォルダをzip化します。現在のRelease名は次の形式です。
 
 ```text
-dist\controller-mapper-v0.1.0-win-x64.zip
+dist\controller-mapper-v0.1.2-win-x64.zip
 ```
 
 ## ディレクトリ構成

@@ -74,6 +74,7 @@ _TRANSFORM_TYPES: list[tuple[str, str, str]] = [
     ("ボタン→軸", "button_to_axis", "ボタンON/OFFを軸値に変換"),
     ("2ボタン→軸", "buttons_to_axis", "2つのボタンで軸を操作"),
     ("ボタン分割 (ON/OFF→2ボタン)", "button_split", "ボタンのON/OFFを別々のボタンに出力"),
+    ("ボタンOFF→ボタン", "button_off", "ボタンが押されていない間だけボタンONを出力"),
 ]
 
 _HAT_DIRECTIONS: list[tuple[str, tuple[int, int]]] = [
@@ -146,7 +147,7 @@ def _forced_io_types_for_transform(transform_type: str) -> tuple[str | None, str
         return None, "axis"
     if transform_type == "buttons_to_axis":
         return "button_pair", "axis"
-    if transform_type == "button_split":
+    if transform_type in ("button_split", "button_off"):
         return None, "button"
     return None, None
 
@@ -621,6 +622,20 @@ class RuleEditDialog(QDialog):
             lbl_ctr, self._b2a_center,
         ]
 
+        # --- button_split ---
+        self._split_gap = QDoubleSpinBox()
+        self._split_gap.setRange(0, 5000)
+        self._split_gap.setSingleStep(10)
+        self._split_gap.setDecimals(0)
+        self._split_gap.setSuffix(" ms")
+        self._split_gap.setStyleSheet(ss)
+        lbl_split_gap = QLabel("同時OFF時間:")
+        self._trn_layout.addRow(lbl_split_gap, self._split_gap)
+
+        self._transform_widgets["button_split"] = [
+            lbl_split_gap, self._split_gap,
+        ]
+
         # 初期表示: すべて非表示
         for widgets in self._transform_widgets.values():
             for w in widgets:
@@ -658,7 +673,7 @@ class RuleEditDialog(QDialog):
         if input_type is not None:
             self._inp_type.setCurrentText(input_type)
         elif (
-            transform_type in ("button_to_axis", "button_split")
+            transform_type in ("button_to_axis", "button_split", "button_off")
             and self._inp_type.currentText() not in ("button", "hat")
         ):
             self._inp_type.setCurrentText("button")
@@ -968,6 +983,7 @@ class RuleEditDialog(QDialog):
         self._b2a_mode.setCurrentText(t.mode)
         self._b2a_speed.setValue(t.speed_per_sec)
         self._b2a_center.setChecked(t.return_to_center)
+        self._split_gap.setValue(t.gap_ms)
 
         if trn_internal == "axis_to_dual_button":
             self._out_off_index.setValue(
@@ -1091,7 +1107,10 @@ class RuleEditDialog(QDialog):
                 type="button_split",
                 on_button=self._out_index.value(),
                 off_button=self._out_off_index.value(),
+                gap_ms=self._split_gap.value(),
             )
+        elif trn_type == "button_off":
+            return TransformConfig(type="button_off")
         else:
             # パススルー
             return TransformConfig()
@@ -1287,9 +1306,14 @@ class MappingEditor(QWidget):
                 )
                 out_desc = f"{rule.output.type}[-:{rule.output.index}, +:{pos_idx}]"
             elif rule.transform.type == "button_split":
+                gap_desc = (
+                    f", gap:{rule.transform.gap_ms:g}ms"
+                    if rule.transform.gap_ms > 0
+                    else ""
+                )
                 out_desc = (
                     f"{rule.output.type}[ON:{rule.output.index}, "
-                    f"OFF:{rule.transform.off_button}]"
+                    f"OFF:{rule.transform.off_button}{gap_desc}]"
                 )
             else:
                 out_desc = f"{rule.output.type}[{rule.output.name or rule.output.index}]"

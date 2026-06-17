@@ -179,6 +179,7 @@ def _parse_rule(raw: dict[str, Any]) -> RuleConfig:
                     split_off_default if trn_type == "button_split" else 1,
                 )
             ),
+            gap_ms=float(trn_raw.get("gap_ms", 0.0)),
         ),
         output=RuleOutputConfig(
             device=out_raw.get("device", "vjoy1"),
@@ -331,6 +332,8 @@ def _rule_to_dict(rule: RuleConfig) -> dict[str, Any]:
             trn["return_to_center"] = t.return_to_center
         elif t.type == "button_split":
             trn["off_button"] = t.off_button
+            if t.gap_ms > 0:
+                trn["gap_ms"] = t.gap_ms
         d["transform"] = trn
 
     # output
